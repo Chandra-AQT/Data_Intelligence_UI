@@ -88,7 +88,7 @@ function Step1Upload({
   });
   const parsedDocs = (docsData ?? []).filter((d: { status: string }) => d.status === "parsed");
   const allDocs = docsData ?? [];
-  const anyParsing = allDocs.some((d: { status: string }) => d.status === "parsing");
+  const anyParsing = allDocs.some((d: { status: string }) => ["parsing", "uploaded"].includes(d.status));
 
   // Upload mutation for single/batch files
   const uploadMut = useMutation({
@@ -242,12 +242,13 @@ function Step1Upload({
                   ● {mode === "single" ? "SELECT DOCUMENT" : "SELECT DOCUMENTS"}
                 </p>
                 <p className="text-sm font-black text-white mt-1">
-                  {parsedDocs.length} parsed {parsedDocs.length === 1 ? "document" : "documents"} available
+                  {parsedDocs.length} ready · {allDocs.length} total
+                  {anyParsing && <span className="ml-2 text-xs animate-pulse" style={{ color: "#60a5fa" }}>⟳ Parsing...</span>}
                 </p>
               </div>
               {mode === "batch" && parsedDocs.length > 0 && (
                 <div className="flex gap-2">
-                  <Button size="sm" variant="outline" onClick={() => setBatchDocIds(parsedDocs.map((d: { id: string }) => d.id))}>All</Button>
+                  <Button size="sm" variant="outline" onClick={() => setBatchDocIds(parsedDocs.map((d: { id: string }) => d.id))}>All Parsed</Button>
                   <Button size="sm" variant="outline" onClick={() => setBatchDocIds([])}>Clear</Button>
                 </div>
               )}
@@ -257,23 +258,28 @@ function Step1Upload({
               <div className="space-y-2">
                 {[1, 2, 3].map(i => <div key={i} className="h-14 rounded-xl animate-pulse" style={{ backgroundColor: "rgba(255,255,255,0.04)" }} />)}
               </div>
-            ) : parsedDocs.length === 0 ? (
+            ) : allDocs.length === 0 ? (
               <div className="py-10 text-center">
                 <FolderOpen className="mx-auto h-10 w-10 mb-3 opacity-20" style={{ color: "#60a5fa" }} />
-                <p className="text-sm font-bold" style={{ color: "rgba(255,255,255,0.3)" }}>No parsed documents yet</p>
+                <p className="text-sm font-bold" style={{ color: "rgba(255,255,255,0.3)" }}>No documents yet</p>
                 <p className="text-xs mt-1" style={{ color: "rgba(255,255,255,0.2)" }}>Upload a file above — parsing starts automatically</p>
               </div>
             ) : (
               <div className="space-y-1.5 max-h-64 overflow-y-auto pr-1">
-                {parsedDocs.map((doc: { id: string; file_name: string; page_count: number; file_size: number }) => {
+                {allDocs.map((doc: { id: string; file_name: string; page_count: number; file_size: number; status: string }) => {
+                  const isParsed = doc.status === "parsed";
+                  const isParsing = doc.status === "parsing" || doc.status === "uploaded";
                   const sel = mode === "single" ? singleDocId === doc.id : batchDocIds.includes(doc.id);
                   return (
                     <button key={doc.id}
-                      onClick={() => mode === "single" ? setSingleDocId(doc.id) : toggleBatch(doc.id)}
-                      className="w-full flex items-center gap-3 rounded-xl px-4 py-3 text-left transition-all duration-150 hover:-translate-y-0.5"
+                      onClick={() => { if (!isParsed) return; mode === "single" ? setSingleDocId(doc.id) : toggleBatch(doc.id); }}
+                      disabled={!isParsed}
+                      className="w-full flex items-center gap-3 rounded-xl px-4 py-3 text-left transition-all duration-150"
                       style={{
                         backgroundColor: sel ? "rgba(37,99,235,0.12)" : "rgba(255,255,255,0.02)",
                         border: sel ? "1px solid rgba(37,99,235,0.35)" : "1px solid rgba(255,255,255,0.06)",
+                        opacity: isParsed ? 1 : 0.6,
+                        cursor: isParsed ? "pointer" : "not-allowed",
                       }}>
                       <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg"
                         style={{ backgroundColor: sel ? "rgba(37,99,235,0.2)" : "rgba(255,255,255,0.06)" }}>
@@ -281,11 +287,16 @@ function Step1Upload({
                       </div>
                       <div className="flex-1 min-w-0">
                         <p className="text-sm font-semibold text-white truncate">{doc.file_name}</p>
-                        <p className="text-xs" style={{ color: "rgba(255,255,255,0.3)" }}>
-                          {doc.page_count}p · {(doc.file_size / 1024).toFixed(0)} KB
-                        </p>
+                        <div className="flex items-center gap-2 mt-0.5">
+                          {isParsed && <span className="text-xs" style={{ color: "rgba(255,255,255,0.3)" }}>{doc.page_count}p · {(doc.file_size / 1024).toFixed(0)} KB</span>}
+                          {isParsing && <span className="text-xs animate-pulse" style={{ color: "#60a5fa" }}>⟳ Parsing... wait a moment</span>}
+                          {doc.status === "error" && <span className="text-xs" style={{ color: "#ef4444" }}>✗ Parse failed</span>}
+                        </div>
                       </div>
                       {sel && <CheckCircle2 className="h-4 w-4 shrink-0" style={{ color: "#22c55e" }} />}
+                      {isParsing && (
+                        <div className="h-4 w-4 shrink-0 rounded-full border-2 border-blue-400 border-t-transparent animate-spin" />
+                      )}
                     </button>
                   );
                 })}
