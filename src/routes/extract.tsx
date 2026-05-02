@@ -787,6 +787,155 @@ function Step4Running({ mode, singleDocId, batchDocIds, zipFile, schemaId, provi
   );
 }
 
+// ── Batch Results View ────────────────────────────────────────────────────────
+function BatchResultsView({ batchId, schemaName }: { batchId: string; schemaName?: string }) {
+  const [selectedJobId, setSelectedJobId] = useState<string | null>(null);
+  const [jobDetail, setJobDetail] = useState<Record<string, unknown> | null>(null);
+  const [loadingDetail, setLoadingDetail] = useState(false);
+
+  const { data: batchData } = useQuery({
+    queryKey: ["batch-status", batchId],
+    queryFn: () => api.get(`/batch/${batchId}`).then(r => r.data),
+    refetchInterval: (q) => {
+      const d = q.state.data as { status?: string } | undefined;
+      return d?.status === "running" ? 3000 : false;
+    },
+  });
+
+  const jobIds: string[] = batchData?.job_ids ?? [];
+
+  const { data: jobsData } = useQuery({
+    queryKey: ["jobs"],
+    queryFn: () => api.get("/jobs").then(r => r.data.jobs ?? []),
+  });
+
+  const batchJobs = (jobsData ?? []).filter((j: { job_id: string; batch_id?: string }) => j.batch_id === batchId);
+
+  const loadJob = async (jobId: string) => {
+    setSelectedJobId(jobId);
+    setLoadingDetail(true);
+    try {
+      const res = await api.get(`/jobs/${jobId}`);
+      setJobDetail(res.data);
+    } catch { toast.error("Failed to load result"); }
+    setLoadingDetail(false);
+  };
+
+  const result = jobDetail?.result as Record<string, unknown> | undefined;
+  type QT = { score?: number; breakdown?: { coverage?: number; avg_confidence?: number }; missing_critical?: string[]; suggestions?: string[] };
+  const quality = (result as { quality?: QT } | undefined)?.quality;
+  const records = (result as { records?: unknown[] } | undefined)?.records as Array<{ result: Record<string, unknown>; confidence: Record<string, number>; schema_fields?: string[] }> | undefined;
+  const singleResult = (result as { result?: Record<string, unknown> } | undefined)?.result;
+  const confidence = (result as { confidence?: Record<string, number> } | undefined)?.confidence ?? {};
+  const schemaFields = (result as { schema_fields?: string[] } | undefined)?.schema_fields ?? [];
+  const failureLog = (result as { failure_log?: Array<{ type: string; reason?: string }> } | undefined)?.failure_log ?? [];
+
+  return (
+    <div className="grid gap-5 lg:grid-cols-[280px_1fr]">
+      {/* Left: job list */}
+      <div className="rounded-2xl p-4 space-y-2" style={CARD}>
+        <p className="text-xs font-bold uppercase tracking-widest mb-3" style={{ color: "#22d3ee" }}>
+          ● {batchJobs.length} DOCUMENTS
+        </p>
+        {batchJobs.length === 0 ? (
+          <div className="py-6 text-center">
+            <Loader2 className="mx-auto h-6 w-6 animate-spin mb-2" style={{ color: "#3b82f6" }} />
+            <p className="text-xs" style={{ color: "rgba(255,255,255,0.3)" }}>Loading results...</p>
+          </div>
+        ) : (
+          <div className="space-y-1.5 max-h-[500px] overflow-y-auto pr-1">
+            {batchJobs.map((job: { job_id: string; schema_name: string; status: string; result?: { quality?: { score?: number } } }) => {
+              const score = job.result?.quality?.score ?? 0;
+              const isSelected = selectedJobId === job.job_id;
+              const gradeColors: Record<string, string> = { A: "#22c55e", B: "#60a5fa", C: "#f59e0b", D: "#f97316", F: "#ef4444" };
+              const grade = score >= 90 ? "A" : score >= 75 ? "B" : score >= 60 ? "C" : score >= 45 ? "D" : "F";
+              return (
+                <button key={job.job_id}
+                  onClick={() => loadJob(job.job_id)}
+                  className="w-full flex items-center gap-3 rounded-xl px-3 py-2.5 text-left transition-all hover:bg-white/[0.04]"
+                  style={{
+                    backgroundColor: isSelected ? "rgba(37,99,235,0.12)" : "rgba(255,255,255,0.02)",
+                    border: isSelected ? "1px solid rgba(37,99,235,0.3)" : "1px solid rgba(255,255,255,0.06)",
+                  }}>
+                  <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg"
+                    style={{ backgroundColor: job.status === "completed" ? "rgba(34,197,94,0.15)" : "rgba(239,68,68,0.12)" }}>
+                    {job.status === "completed"
+                      ? <CheckCircle2 className="h-3.5 w-3.5" style={{ color: "#22c55e" }} />
+                      : <AlertCircle className="h-3.5 w-3.5" style={{ color: "#ef4444" }} />
+                    }
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-xs font-semibold text-white truncate">{job.schema_name || "Document"}</p>
+                    <p className="font-mono text-[10px]" style={{ color: "rgba(255,255,255,0.25)" }}>{job.job_id.slice(0, 10)}…</p>
+                  </div>
+                  {score > 0 && (
+                    <span className="text-xs font-black shrink-0" style={{ color: gradeColors[grade] }}>{grade}</span>
+                  )}
+                </button>
+              );
+            })}
+          </div>
+        )}
+      </div>
+
+      {/* Right: result detail */}
+      <div className="rounded-2xl p-5 min-h-[300px]" style={CARD}>
+        {!selectedJobId && (
+          <div className="flex flex-col items-center justify-center h-full py-16 text-center">
+            <Boxes className="h-12 w-12 mb-3 opacity-20" style={{ color: "#60a5fa" }} />
+            <p className="text-sm font-bold" style={{ color: "rgba(255,255,255,0.3)" }}>Select a document</p>
+            <p className="text-xs mt-1" style={{ color: "rgba(255,255,255,0.2)" }}>Click any document on the left to view its extracted data</p>
+          </div>
+        )}
+        {loadingDetail && (
+          <div className="flex items-center justify-center py-16">
+            <Loader2 className="h-8 w-8 animate-spin" style={{ color: "#3b82f6" }} />
+          </div>
+        )}
+        {jobDetail && !loadingDetail && (
+          <>
+            <div className="flex items-center justify-between mb-4 pb-4" style={{ borderBottom: "1px solid rgba(255,255,255,0.06)" }}>
+              <div>
+                <p className="text-sm font-black text-white">{String(jobDetail.schema_name ?? "Result")}</p>
+                <div className="flex items-center gap-2 mt-1">
+                  <span className="font-mono text-xs" style={{ color: "#60a5fa" }}>{String(jobDetail.job_id ?? "").slice(0, 14)}…</span>
+                  <span className="text-xs" style={{ color: "rgba(255,255,255,0.3)" }}>{String(jobDetail.provider ?? "")}</span>
+                  {quality?.score !== undefined && (
+                    <span className="text-xs font-black" style={{ color: quality.score >= 75 ? "#22c55e" : "#f59e0b" }}>
+                      {quality.score}/100
+                    </span>
+                  )}
+                </div>
+              </div>
+              <div className="flex gap-2">
+                <button onClick={async () => { const r = await api.get(`/export/${selectedJobId}/excel`, { responseType: "blob" }); downloadBlob(r.data, `result_${selectedJobId!.slice(0, 8)}.xlsx`); }}
+                  className="flex items-center gap-1 rounded-lg px-3 py-1.5 text-xs font-black text-white"
+                  style={{ background: "linear-gradient(135deg,#2563eb,#7c3aed)" }}>
+                  <Download className="h-3 w-3" />Excel
+                </button>
+                <button onClick={async () => { const r = await api.get(`/export/${selectedJobId}/csv`, { responseType: "blob" }); downloadBlob(r.data, `result_${selectedJobId!.slice(0, 8)}.csv`); }}
+                  className="flex items-center gap-1 rounded-lg px-3 py-1.5 text-xs font-bold"
+                  style={{ backgroundColor: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.1)", color: "rgba(255,255,255,0.6)" }}>
+                  CSV
+                </button>
+              </div>
+            </div>
+            <ResultView
+              result={singleResult} confidence={confidence} records={records}
+              schemaFields={schemaFields} score={quality?.score ?? 0} failureLog={failureLog}
+              provider={String(jobDetail.provider ?? "")} schemaName={schemaName}
+              jobId={selectedJobId ?? undefined}
+              coverage={quality?.breakdown?.coverage ? Math.round((quality.breakdown.coverage / 40) * 100) : undefined}
+              avgConfidence={quality?.breakdown?.avg_confidence ? Math.round((quality.breakdown.avg_confidence / 35) * 100) : undefined}
+              missingFields={quality?.missing_critical ?? []} suggestions={quality?.suggestions ?? []}
+            />
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
 //  Step 5: Results 
 function Step5Results({ result, jobId, mode, schemaId, provider, onRestart }: {
   result: Record<string, unknown>; jobId: string; mode: UploadMode;
@@ -839,11 +988,7 @@ function Step5Results({ result, jobId, mode, schemaId, provider, onRestart }: {
         </div>
       </div>
       {isBatch ? (
-        <div className="rounded-2xl p-8 text-center" style={CARD}>
-          <Boxes className="mx-auto h-12 w-12 mb-4" style={{ color: "#22c55e" }} />
-          <h3 className="text-xl font-black text-white mb-2">Batch Processing Complete</h3>
-          <p className="text-sm" style={{ color: "rgba(255,255,255,0.4)" }}>All documents processed. Download the combined Excel above — one row per model, all fields as columns.</p>
-        </div>
+        <BatchResultsView batchId={batchId!} schemaName={schemaName} />
       ) : (
         <div className="rounded-2xl p-5" style={CARD}>
           <ResultView result={singleResult} confidence={confidence} records={records} schemaFields={schemaFields} score={quality?.score ?? 0} failureLog={failureLog}
