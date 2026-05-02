@@ -1,8 +1,8 @@
 import axios from "axios";
 
-// Production backend URL
+// Production backend URL — reads VITE_API_BASE env var set in Vercel
 export const API_BASE_URL = (
-  typeof import.meta !== "undefined" && (import.meta as { env?: { VITE_API_URL?: string } }).env?.VITE_API_URL
+  typeof import.meta !== "undefined" && (import.meta as { env?: { VITE_API_BASE?: string } }).env?.VITE_API_BASE
 ) || "https://ai-data-intelligence-1.onrender.com/api/v1";
 
 export type ProviderKey = "landingai" | "openai" | "chatgpt" | "anthropic" | "gemini" | "groq" | "grok" | "perplexity" | "emergence" | "ollama" | "python" | "none";
@@ -24,7 +24,10 @@ export const providers: Array<{ key: ProviderKey; label: string; model: string; 
 
 export const engineBadges = ["Landing AI ADE", "OpenAI GPT-4o", "Anthropic Claude", "Google Gemini", "Groq", "xAI Grok", "Perplexity AI", "Emergence AI", "Ollama (Local)", "Python Heuristic"];
 
-export const api = axios.create({ baseURL: API_BASE_URL });
+export const api = axios.create({
+  baseURL: API_BASE_URL,
+  timeout: 60000, // 60s — Render free tier cold start can take 30-50s
+});
 
 api.interceptors.request.use((config) => {
   if (typeof window !== "undefined") {
