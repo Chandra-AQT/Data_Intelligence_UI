@@ -474,7 +474,7 @@ function Index() {
 
           <div className="mt-5 inline-flex items-center gap-2 rounded-xl border border-white/10 bg-white/5 px-5 py-2.5 backdrop-blur-sm">
             <Zap className="h-4 w-4 text-amber-400" />
-            <span className="text-sm font-black tracking-widest text-white/90 uppercase">PAD Extractor</span>
+            <span className="text-sm font-black tracking-widest text-white/90 uppercase">Metadata Extractor</span>
           </div>
 
           <p className="mt-7 text-xl leading-relaxed text-white/60 max-w-2xl mx-auto">
@@ -532,7 +532,7 @@ function Index() {
         <div className="mx-auto max-w-7xl px-6">
           <div className="text-center mb-16">
             <p className="text-sm font-bold uppercase tracking-widest text-blue-400 mb-3">Simple Process</p>
-            <h2 className="text-4xl font-black text-white sm:text-5xl">How PAD Extractor Works</h2>
+            <h2 className="text-4xl font-black text-white sm:text-5xl">How Metadata Extractor Works</h2>
             <p className="mt-4 text-lg text-white/50">From raw PDF to structured data in seconds</p>
           </div>
           <div className="relative grid gap-6 lg:grid-cols-4">
@@ -619,7 +619,7 @@ function Index() {
               <Sparkles className="h-3.5 w-3.5 text-white" />
             </div>
             <span className="font-black text-white">AQT Data Intelligence</span>
-            <span className="text-white/40 text-sm">· PAD Extractor v2.0</span>
+            <span className="text-white/40 text-sm">· Metadata Extractor v2.0</span>
           </div>
           <p className="text-sm text-white/40">© 2026 AQT Data Intelligence. All rights reserved.</p>
         </div>

@@ -221,7 +221,7 @@ function Settings() {
               <p className="text-xs font-bold uppercase tracking-widest" style={{ color: "#22d3ee" }}>● ABOUT</p>
               <div>
                 <h2 className="text-2xl font-black text-white">AQT Data Intelligence</h2>
-                <p className="text-sm mt-1" style={{ color: "rgba(255,255,255,0.4)" }}>PAD Extractor · Version 2.0 · ADE Edition</p>
+                <p className="text-sm mt-1" style={{ color: "rgba(255,255,255,0.4)" }}>Metadata Extractor · Version 2.0 · ADE Edition</p>
               </div>
               <div className="grid gap-3 text-sm">
                 <div className="flex items-center gap-3 rounded-xl p-3" style={{ backgroundColor: "rgba(255,255,255,0.02)", border: "1px solid rgba(255,255,255,0.06)" }}>

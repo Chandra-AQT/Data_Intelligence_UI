@@ -38,8 +38,8 @@ const PROVIDERS = [
 // ── Platform knowledge base ───────────────────────────────────────────────────
 const KB: Array<{ kw: string[]; ans: string }> = [
   {
-    kw: ["what is", "about", "platform", "aqt", "overview", "pad extractor"],
-    ans: `## AQT Data Intelligence — PAD Extractor\n\nAn AI-powered document extraction platform that reads industrial equipment spec sheets and converts them into clean, structured spreadsheet data automatically.\n\n**How it works:**\n1. Upload a PDF/image/Word/Excel file\n2. Define a schema (what fields to extract)\n3. Choose an AI engine\n4. Get structured data with confidence scores\n5. Export to Excel/CSV\n\n**Key benefit:** What takes a team 3 days now takes one person 30 minutes.`
+    kw: ["what is", "about", "platform", "aqt", "overview", "Metadata Extractor"],
+    ans: `## AQT Data Intelligence — Metadata Extractor\n\nAn AI-powered document extraction platform that reads industrial equipment spec sheets and converts them into clean, structured spreadsheet data automatically.\n\n**How it works:**\n1. Upload a PDF/image/Word/Excel file\n2. Define a schema (what fields to extract)\n3. Choose an AI engine\n4. Get structured data with confidence scores\n5. Export to Excel/CSV\n\n**Key benefit:** What takes a team 3 days now takes one person 30 minutes.`
   },
   {
     kw: ["navigation", "pages", "menu", "sidebar", "where", "find", "navigate"],
@@ -668,3 +668,4 @@ export function Chatbot({ jobId, documentId, schemaId }: { jobId?: string; docum
     </>
   );
 }
+

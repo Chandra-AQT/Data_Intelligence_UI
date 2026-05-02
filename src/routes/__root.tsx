@@ -1,4 +1,4 @@
-import { Outlet, Link, createRootRoute, HeadContent, Scripts } from "@tanstack/react-router";
+﻿import { Outlet, Link, createRootRoute, HeadContent, Scripts } from "@tanstack/react-router";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "react-hot-toast";
 import appCss from "../styles.css?url";
@@ -25,10 +25,10 @@ export const Route = createRootRoute({
     meta: [
       { charSet: "utf-8" },
       { name: "viewport", content: "width=device-width, initial-scale=1" },
-      { title: "AQT Data Intelligence — PAD Extractor" },
-      { name: "description", content: "AI-powered Product Attribute Data extraction cockpit for industrial equipment spec sheets." },
+      { title: "AQT Data Intelligence â€” Metadata Extractor" },
+      { name: "description", content: "AI-powered AI-powered metadata extraction platform for industrial equipment spec sheets." },
       { name: "author", content: "AQT Data Intelligence" },
-      { property: "og:title", content: "AQT Data Intelligence — PAD Extractor" },
+      { property: "og:title", content: "AQT Data Intelligence â€” Metadata Extractor" },
       { property: "og:description", content: "Extract structured product attribute data from industrial equipment spec sheets using multiple AI engines." },
       { property: "og:type", content: "website" },
       { name: "twitter:card", content: "summary" },
@@ -52,3 +52,4 @@ function RootComponent() {
     </QueryClientProvider>
   );
 }
+
