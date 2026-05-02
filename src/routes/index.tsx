@@ -464,11 +464,11 @@ function Index() {
             AI-Powered Document Extraction
           </div>
 
-          <h1 className="text-7xl font-black leading-[1.02] tracking-tight sm:text-8xl xl:text-9xl">
+          <h1 className="text-6xl font-black leading-[1.02] tracking-tight sm:text-7xl xl:text-8xl">
             <span className="text-white">AQT</span>
             <br />
             <span className="bg-gradient-to-r from-blue-400 via-cyan-400 to-violet-400 bg-clip-text text-transparent">
-              Data Intel
+              Data Intelligence
             </span>
           </h1>
 
