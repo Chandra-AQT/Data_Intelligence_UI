@@ -354,8 +354,26 @@ function Index() {
   const [scrolled, setScrolled] = useState(false);
   const [count, setCount] = useState({ engines: 0, fields: 0, accuracy: 0 });
   const [showDemo, setShowDemo] = useState(false);
+  const [apiOnline, setApiOnline] = useState<boolean | null>(null);
   const statsRef = useRef<HTMLDivElement>(null);
   const loggedIn = isAuthenticated();
+
+  // Ping backend health every 30s
+  useEffect(() => {
+    const BASE = (import.meta as { env?: { VITE_API_BASE?: string } }).env?.VITE_API_BASE
+      ?? "https://ai-data-intelligence-1.onrender.com/api/v1";
+    const check = async () => {
+      try {
+        const res = await fetch(`${BASE}/health`, { method: "GET", signal: AbortSignal.timeout(5000) });
+        setApiOnline(res.ok);
+      } catch {
+        setApiOnline(false);
+      }
+    };
+    check();
+    const id = setInterval(check, 30_000);
+    return () => clearInterval(id);
+  }, []);
 
   useEffect(() => {
     const onScroll = () => setScrolled(window.scrollY > 30);
@@ -428,6 +446,29 @@ function Index() {
             <a href="#engines" className="hover:text-white transition-colors">Engines</a>
           </div>
           <div className="flex items-center gap-3">
+            {/* API status indicator */}
+            <div className="hidden sm:flex items-center gap-1.5 px-2.5 py-1 rounded-full"
+              style={{ backgroundColor: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.1)" }}>
+              <span className="relative flex h-2 w-2">
+                {apiOnline === null ? (
+                  <span className="h-2 w-2 rounded-full bg-yellow-400 opacity-60" />
+                ) : apiOnline ? (
+                  <>
+                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75" />
+                    <span className="relative inline-flex h-2 w-2 rounded-full bg-green-400" />
+                  </>
+                ) : (
+                  <>
+                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-500 opacity-75" />
+                    <span className="relative inline-flex h-2 w-2 rounded-full bg-red-500" />
+                  </>
+                )}
+              </span>
+              <span className="text-[10px] font-bold"
+                style={{ color: apiOnline === null ? "#facc15" : apiOnline ? "#4ade80" : "#f87171" }}>
+                {apiOnline === null ? "Checking…" : apiOnline ? "API Online" : "API Offline"}
+              </span>
+            </div>
             {loggedIn ? (
               <>
                 <Link to="/dashboard" className="text-sm font-semibold text-white/80 hover:text-white transition-colors px-4 py-2">Dashboard</Link>
