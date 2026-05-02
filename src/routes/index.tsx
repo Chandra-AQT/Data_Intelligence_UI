@@ -7,6 +7,7 @@ import {
   Download, CheckCircle, AlertCircle, Loader2
 } from "lucide-react";
 import { engineBadges, isAuthenticated } from "@/lib/aqt";
+import { FloatingNav } from "@/components/aqt/app-shell";
 
 export const Route = createFileRoute("/")({ component: Index });
 
@@ -623,6 +624,7 @@ function Index() {
           <p className="text-sm text-white/40">© 2026 AQT Data Intelligence. All rights reserved.</p>
         </div>
       </footer>
+      <FloatingNav />
     </div>
   );
 }

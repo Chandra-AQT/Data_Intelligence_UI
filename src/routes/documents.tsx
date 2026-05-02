@@ -6,9 +6,10 @@ import toast from "react-hot-toast";
 import {
   Brain, Eye, FileUp, Trash2, Zap, RefreshCw, X,
   ChevronLeft, ChevronRight, FileText, ToggleLeft, ToggleRight,
-  Table2, Code2, Loader2, Download, ArrowRight
+  Table2, Code2, Loader2, Download, ArrowRight, Search, Filter, AlertTriangle, Copy, Check
 } from "lucide-react";
-import { AppShell } from "@/components/aqt/app-shell";
+import { AppShell, SkeletonTable, EmptyState } from "@/components/aqt/app-shell";
+import { pushNotification } from "@/components/aqt/app-shell";
 import { StatusBadge, GradeBadge } from "@/components/aqt/badges";
 import { Button } from "@/components/ui/button";
 import { api, downloadBlob } from "@/lib/aqt";
@@ -18,6 +19,50 @@ export const Route = createFileRoute("/documents")({ component: Documents });
 type DocMeta = { id: string; file_name: string; status: string; page_count: number; file_size: number; chunk_count: number; table_count: number; created_at: string; file_path?: string };
 type Chunk = { id: string; type: string; markdown: string; grounding?: { page: number } };
 type ExtractionJob = { job_id: string; schema_name: string; provider: string; status: string; created_at: string; document_id?: string; result?: { quality?: { score?: number } } };
+
+// ── Copy ID helper ────────────────────────────────────────────────────────────
+function CopyId({ id }: { id: string }) {
+  const [copied, setCopied] = useState(false);
+  return (
+    <button onClick={() => { navigator.clipboard.writeText(id); setCopied(true); setTimeout(() => setCopied(false), 2000); }}
+      className="flex items-center gap-1 font-mono text-xs transition-colors hover:text-blue-400"
+      style={{ color: "rgba(255,255,255,0.25)" }} title="Copy ID">
+      {copied ? <Check className="h-3 w-3 text-green-400" /> : <Copy className="h-3 w-3" />}
+      {id.slice(0, 8)}…
+    </button>
+  );
+}
+
+// ── Confirm Delete Modal ──────────────────────────────────────────────────────
+function ConfirmDeleteModal({ label, count, onConfirm, onCancel }: {
+  label: string; count: number; onConfirm: () => void; onCancel: () => void;
+}) {
+  return (
+    <div className="fixed inset-0 z-[80] flex items-center justify-center" style={{ backgroundColor: "rgba(0,0,0,0.7)", backdropFilter: "blur(8px)" }}>
+      <div className="w-full max-w-sm mx-4 rounded-2xl p-6 text-center" style={{ backgroundColor: "#0d1526", border: "1px solid rgba(255,255,255,0.1)", boxShadow: "0 32px 80px rgba(0,0,0,0.8)" }}>
+        <div className="flex h-16 w-16 items-center justify-center rounded-2xl mx-auto mb-4" style={{ backgroundColor: "rgba(239,68,68,0.12)", border: "1px solid rgba(239,68,68,0.2)" }}>
+          <AlertTriangle className="h-8 w-8" style={{ color: "#ef4444" }} />
+        </div>
+        <h3 className="text-lg font-black text-white mb-2">Delete {count > 1 ? `${count} Documents` : "Document"}?</h3>
+        <p className="text-sm mb-1" style={{ color: "rgba(255,255,255,0.5)" }}>
+          {count > 1 ? `You are about to delete ${count} documents.` : `You are about to delete:`}
+        </p>
+        {count === 1 && <p className="text-sm font-bold text-white mb-1 truncate px-4">{label}</p>}
+        <p className="text-xs mb-6" style={{ color: "#ef4444" }}>This action cannot be undone.</p>
+        <div className="flex gap-3">
+          <button onClick={onCancel} className="flex-1 rounded-xl py-2.5 text-sm font-bold transition-all"
+            style={{ backgroundColor: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.1)", color: "rgba(255,255,255,0.6)" }}>
+            Cancel
+          </button>
+          <button onClick={onConfirm} className="flex-1 rounded-xl py-2.5 text-sm font-black text-white transition-all hover:-translate-y-0.5"
+            style={{ background: "linear-gradient(135deg,#ef4444,#dc2626)" }}>
+            Delete
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 function TableChunk({ chunk }: { chunk: Chunk }) {
   const rows: string[][] = [];
@@ -252,6 +297,9 @@ function Documents() {
   const qc = useQueryClient();
   const [selected, setSelected] = useState<string[]>([]);
   const [viewingDoc, setViewingDoc] = useState<DocMeta | null>(null);
+  const [search, setSearch] = useState("");
+  const [statusFilter, setStatusFilter] = useState("all");
+  const [confirmDelete, setConfirmDelete] = useState<{ ids: string[]; label: string } | null>(null);
 
   const { data, isLoading } = useQuery({
     queryKey: ["documents"],
@@ -270,13 +318,24 @@ function Documents() {
   const documents: DocMeta[] = data ?? [];
   const allJobs: ExtractionJob[] = jobsData ?? [];
 
+  // Filter documents by search + status
+  const filteredDocs = documents.filter(doc => {
+    const matchSearch = !search || doc.file_name.toLowerCase().includes(search.toLowerCase());
+    const matchStatus = statusFilter === "all" || doc.status === statusFilter;
+    return matchSearch && matchStatus;
+  });
+
   const uploadMut = useMutation({
     mutationFn: (files: File[]) => {
       const fd = new FormData();
       files.forEach((f) => fd.append("files", f));
       return api.post("/documents/upload/batch", fd);
     },
-    onSuccess: (_, files) => { toast.success(`${files.length} file(s) uploaded — parsing started`); qc.invalidateQueries({ queryKey: ["documents"] }); },
+    onSuccess: (_, files) => {
+      toast.success(`${files.length} file(s) uploaded — parsing started`);
+      pushNotification("info", "Documents Uploaded", `${files.length} file(s) uploaded and parsing started`);
+      qc.invalidateQueries({ queryKey: ["documents"] });
+    },
     onError: () => toast.error("Upload failed"),
   });
 
@@ -329,6 +388,18 @@ function Documents() {
   return (
     <>
       {viewingDoc && <DocViewerPanel doc={viewingDoc} onClose={() => setViewingDoc(null)} allJobs={allJobs} />}
+      {confirmDelete && (
+        <ConfirmDeleteModal
+          label={confirmDelete.label}
+          count={confirmDelete.ids.length}
+          onCancel={() => setConfirmDelete(null)}
+          onConfirm={() => {
+            confirmDelete.ids.forEach(id => deleteMut.mutate(id));
+            setSelected([]);
+            setConfirmDelete(null);
+          }}
+        />
+      )}
 
       <AppShell title="Files" subtitle="Upload and manage your document files" sectionLabel="DOCUMENT INTAKE">
         <div className="space-y-5">
@@ -343,34 +414,54 @@ function Documents() {
           {selected.length > 0 && (
             <div className="flex flex-wrap gap-2 rounded-xl p-3" style={{ backgroundColor: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.08)" }}>
               <Button onClick={() => batchParseMut.mutate(selected)}>Parse Selected ({selected.length})</Button>
-              <Button variant="destructive" onClick={() => { selected.forEach((id) => deleteMut.mutate(id)); setSelected([]); }}>Delete Selected</Button>
+              <Button variant="destructive" onClick={() => setConfirmDelete({ ids: selected, label: `${selected.length} document${selected.length > 1 ? "s" : ""}` })}>
+                <Trash2 className="h-4 w-4" />Delete Selected ({selected.length})
+              </Button>
               <Button asChild><Link to="/extract">Extract Selected →</Link></Button>
               <Button variant="outline" onClick={() => setSelected([])}>Clear</Button>
             </div>
           )}
 
           <section className="rounded-2xl p-5" style={{ backgroundColor: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.08)" }}>
-            <div className="mb-4 flex items-center justify-between">
-              <h2 className="text-lg font-black">Documents ({documents.length})</h2>
-              <div className="flex items-center gap-3">
-                {anyParsing && <span className="text-sm text-primary animate-pulse">Auto-refreshing every 3s</span>}
+            <div className="mb-4 flex items-center justify-between flex-wrap gap-3">
+              <h2 className="text-lg font-black">Documents ({filteredDocs.length}{filteredDocs.length !== documents.length ? ` of ${documents.length}` : ""})</h2>
+              <div className="flex items-center gap-2 flex-wrap">
+                {/* Search */}
+                <div className="relative">
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5" style={{ color: "rgba(255,255,255,0.3)" }} />
+                  <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search files..."
+                    className="h-8 rounded-lg pl-8 pr-3 text-xs w-44"
+                    style={{ backgroundColor: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.1)", color: "#f8fafc" }} />
+                  {search && <button onClick={() => setSearch("")} className="absolute right-2 top-1/2 -translate-y-1/2"><X className="h-3 w-3" style={{ color: "rgba(255,255,255,0.4)" }} /></button>}
+                </div>
+                {/* Status filter */}
+                <select value={statusFilter} onChange={e => setStatusFilter(e.target.value)}
+                  className="h-8 rounded-lg px-2 text-xs"
+                  style={{ backgroundColor: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.1)", color: "#f8fafc" }}>
+                  <option value="all">All Status</option>
+                  <option value="parsed">Parsed</option>
+                  <option value="parsing">Parsing</option>
+                  <option value="uploaded">Uploaded</option>
+                  <option value="error">Error</option>
+                </select>
+                {anyParsing && <span className="text-xs text-primary animate-pulse">Auto-refreshing</span>}
                 <Button size="sm" variant="outline" onClick={selectAll}>Select All</Button>
               </div>
             </div>
 
             {isLoading ? (
-              <p className="py-8 text-center text-muted-foreground">Loading...</p>
-            ) : documents.length === 0 ? (
-              <div className="py-12 text-center">
-                <FileUp className="mx-auto h-12 w-12 text-muted-foreground/30" />
-                <p className="mt-3 text-muted-foreground">No documents yet. Drop some PDFs above.</p>
-              </div>
+              <SkeletonTable rows={5} />
+            ) : filteredDocs.length === 0 ? (
+              <EmptyState icon={FileUp} title={search || statusFilter !== "all" ? "No matching documents" : "No documents yet"}
+                description={search || statusFilter !== "all" ? "Try adjusting your search or filter." : "Drag and drop PDFs, images, or Word files above to get started."}
+                action={search || statusFilter !== "all" ? () => { setSearch(""); setStatusFilter("all"); } : undefined}
+                actionLabel={search || statusFilter !== "all" ? "Clear filters" : undefined} />
             ) : (
               <div className="overflow-x-auto">
                 <table className="w-full text-sm">
                   <thead className="text-left text-muted-foreground">
                     <tr>
-                      <th className="pb-2"><input type="checkbox" onChange={(e) => e.target.checked ? selectAll() : setSelected([])} checked={selected.length === documents.length && documents.length > 0} /></th>
+                      <th className="pb-2"><input type="checkbox" onChange={(e) => e.target.checked ? selectAll() : setSelected([])} checked={selected.length === filteredDocs.length && filteredDocs.length > 0} /></th>
                       <th className="pb-2">File Name</th>
                       <th className="pb-2">Status</th>
                       <th className="pb-2">Pages</th>
@@ -381,14 +472,14 @@ function Documents() {
                     </tr>
                   </thead>
                   <tbody>
-                    {documents.map((doc) => (
+                    {filteredDocs.map((doc) => (
                       <tr key={doc.id} className="border-t border-border hover:bg-white/[0.02] transition-colors">
                         <td className="py-3"><input type="checkbox" checked={selected.includes(doc.id)} onChange={() => toggle(doc.id)} /></td>
                         <td className="py-3">
                           <button onClick={() => setViewingDoc(doc)} className="text-left hover:text-blue-400 transition-colors">
                             <p className="max-w-[200px] truncate font-bold text-white" title={doc.file_name}>{doc.file_name}</p>
                           </button>
-                          <p className="font-mono text-xs text-muted-foreground">{doc.id.slice(0, 8)}...</p>
+                          <CopyId id={doc.id} />
                         </td>
                         <td><StatusBadge status={doc.status} /></td>
                         <td>{doc.page_count || "—"}</td>
@@ -401,7 +492,7 @@ function Documents() {
                             <Button asChild size="icon" variant="ghost" title="Extract"><Link to="/extract" search={{ doc: doc.id } as never}><Zap className="h-4 w-4" /></Link></Button>
                             <Button size="icon" variant="ghost" title="Auto Schema" onClick={() => toast("Go to Intelligence → Auto Schema")}><Brain className="h-4 w-4" /></Button>
                             <Button size="icon" variant="ghost" title="Reparse" onClick={() => reparseMut.mutate(doc.id)}><RefreshCw className="h-4 w-4" /></Button>
-                            <Button size="icon" variant="ghost" title="Delete" onClick={() => { if (confirm("Delete this document?")) deleteMut.mutate(doc.id); }}><Trash2 className="h-4 w-4" /></Button>
+                            <Button size="icon" variant="ghost" title="Delete" onClick={() => setConfirmDelete({ ids: [doc.id], label: doc.file_name })}><Trash2 className="h-4 w-4" /></Button>
                           </div>
                         </td>
                       </tr>
