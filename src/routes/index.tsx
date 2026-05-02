@@ -362,9 +362,11 @@ function Index() {
   useEffect(() => {
     const BASE = (import.meta as { env?: { VITE_API_BASE?: string } }).env?.VITE_API_BASE
       ?? "https://ai-data-intelligence-1.onrender.com/api/v1";
+    // Health endpoint is at root level, not under /api/v1
+    const healthUrl = BASE.replace(/\/api\/v1\/?$/, "") + "/health";
     const check = async () => {
       try {
-        const res = await fetch(`${BASE}/health`, { method: "GET", signal: AbortSignal.timeout(5000) });
+        const res = await fetch(healthUrl, { method: "GET", signal: AbortSignal.timeout(8000) });
         setApiOnline(res.ok);
       } catch {
         setApiOnline(false);
