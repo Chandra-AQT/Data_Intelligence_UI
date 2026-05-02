@@ -83,7 +83,7 @@ function ParsedViewer({ docId, fileName, onClose }: { docId: string; fileName: s
   );
 }
 
-const CARD = { backgroundColor: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.08)" } as const;
+const CARD = { backgroundColor: "#0d1526", border: "1px solid rgba(255,255,255,0.1)" } as const;
 const INPUT = { backgroundColor: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.1)", color: "#f8fafc" } as const;
 
 type UploadMode = "single" | "batch" | "zip";

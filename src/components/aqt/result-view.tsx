@@ -48,11 +48,16 @@ export function ResultView({
         <div className="space-y-4">
             {/* Header info */}
             {(schemaName || duration !== undefined || provider) && (
-                <div className="flex flex-wrap items-center gap-3 text-sm text-muted-foreground">
-                    {schemaName && <span className="font-bold text-foreground">{schemaName}</span>}
+                <div className="flex flex-wrap items-center gap-3 text-sm" style={{ color: "rgba(255,255,255,0.5)" }}>
+                    {schemaName && <span className="font-bold text-white">{schemaName}</span>}
                     {duration !== undefined && <span>{duration}s</span>}
-                    {provider && <span className="rounded-full bg-primary/10 px-2 py-0.5 text-xs font-bold text-primary">{provider}</span>}
-                    {jobId && <span className="font-mono text-xs">{jobId.slice(0, 12)}...</span>}
+                    {provider && (
+                        <span className="rounded-full px-2 py-0.5 text-xs font-bold"
+                            style={{ backgroundColor: "rgba(37,99,235,0.15)", color: "#60a5fa" }}>
+                            {provider}
+                        </span>
+                    )}
+                    {jobId && <span className="font-mono text-xs" style={{ color: "rgba(255,255,255,0.3)" }}>{jobId.slice(0, 12)}...</span>}
                 </div>
             )}
 
@@ -69,7 +74,7 @@ export function ResultView({
             {/* Multi-record tabs */}
             {isMultiRecord && (
                 <div>
-                    <div className="flex overflow-x-auto border-b border-border">
+                    <div className="flex overflow-x-auto" style={{ borderBottom: "1px solid rgba(255,255,255,0.08)" }}>
                         {records.map((rec, i) => {
                             const label =
                                 (rec.result?.ModelNumber as string) ||
@@ -79,10 +84,11 @@ export function ResultView({
                                 <button
                                     key={i}
                                     onClick={() => setActiveTab(i)}
-                                    className={`shrink-0 border-b-2 px-4 py-2 text-sm font-semibold transition-colors ${activeTab === i
-                                            ? "border-primary text-primary"
-                                            : "border-transparent text-muted-foreground hover:text-foreground"
-                                        }`}
+                                    className="shrink-0 px-4 py-2 text-sm font-semibold transition-colors"
+                                    style={{
+                                        borderBottom: activeTab === i ? "2px solid #3b82f6" : "2px solid transparent",
+                                        color: activeTab === i ? "#60a5fa" : "rgba(255,255,255,0.4)",
+                                    }}
                                 >
                                     {label}
                                 </button>
@@ -104,10 +110,11 @@ export function ResultView({
 
             {/* Failure log */}
             {failureLog.length > 0 && (
-                <div className="rounded-xl border border-warning/25 bg-warning/10 p-3">
-                    <p className="text-sm font-bold text-warning">Warnings</p>
+                <div className="rounded-xl p-3"
+                    style={{ backgroundColor: "rgba(245,158,11,0.08)", border: "1px solid rgba(245,158,11,0.25)" }}>
+                    <p className="text-sm font-bold" style={{ color: "#f59e0b" }}>Warnings</p>
                     {failureLog.map((f, i) => (
-                        <p key={i} className="mt-1 text-xs text-warning/80">{f.reason || f.type}</p>
+                        <p key={i} className="mt-1 text-xs" style={{ color: "rgba(245,158,11,0.8)" }}>{f.reason || f.type}</p>
                     ))}
                 </div>
             )}
@@ -135,19 +142,22 @@ function FieldGrid({
                 return (
                     <div
                         key={fname}
-                        className={`flex items-start justify-between rounded-lg px-2 py-1.5 hover:bg-muted/60 ${isArray ? "sm:col-span-2" : ""}`}
+                        className={`flex items-start justify-between rounded-lg px-3 py-2 transition-colors ${isArray ? "sm:col-span-2" : ""}`}
+                        style={{ backgroundColor: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.06)" }}
+                        onMouseEnter={e => (e.currentTarget.style.backgroundColor = "rgba(255,255,255,0.06)")}
+                        onMouseLeave={e => (e.currentTarget.style.backgroundColor = "rgba(255,255,255,0.03)")}
                     >
                         <div className="min-w-0 flex-1">
-                            <p className="text-xs font-medium text-muted-foreground">{fname}</p>
-                            <div className="text-sm text-foreground">
+                            <p className="text-xs font-medium" style={{ color: "rgba(255,255,255,0.4)" }}>{fname}</p>
+                            <div className="text-sm text-white mt-0.5">
                                 {isNull ? (
-                                    <span className="text-muted-foreground/40">—</span>
+                                    <span style={{ color: "rgba(255,255,255,0.2)" }}>—</span>
                                 ) : isArray ? (
                                     <NestedArray value={val as unknown[]} fieldName={fname} />
                                 ) : typeof val === "object" ? (
-                                    <span className="font-mono text-xs">{JSON.stringify(val)}</span>
+                                    <span className="font-mono text-xs" style={{ color: "rgba(255,255,255,0.7)" }}>{JSON.stringify(val)}</span>
                                 ) : (
-                                    String(val)
+                                    <span style={{ color: "rgba(255,255,255,0.9)" }}>{String(val)}</span>
                                 )}
                             </div>
                         </div>
@@ -163,7 +173,7 @@ function NestedArray({ value, fieldName }: { value: unknown[]; fieldName: string
     const [expanded, setExpanded] = useState(false);
     const [activeTab, setActiveTab] = useState(0);
 
-    if (!value || value.length === 0) return <span className="text-muted-foreground/40">—</span>;
+    if (!value || value.length === 0) return <span style={{ color: "rgba(255,255,255,0.2)" }}>—</span>;
 
     const isObjects = typeof value[0] === "object" && value[0] !== null;
 
@@ -171,7 +181,10 @@ function NestedArray({ value, fieldName }: { value: unknown[]; fieldName: string
         return (
             <div className="flex flex-wrap gap-1">
                 {value.map((v, i) => (
-                    <span key={i} className="rounded bg-muted px-1.5 py-0.5 text-xs">{String(v)}</span>
+                    <span key={i} className="rounded px-1.5 py-0.5 text-xs"
+                        style={{ backgroundColor: "rgba(255,255,255,0.08)", color: "rgba(255,255,255,0.7)" }}>
+                        {String(v)}
+                    </span>
                 ))}
             </div>
         );
@@ -184,24 +197,30 @@ function NestedArray({ value, fieldName }: { value: unknown[]; fieldName: string
         <div className="mt-1">
             <button
                 onClick={() => setExpanded((e) => !e)}
-                className="flex items-center gap-1 text-xs font-semibold text-primary hover:underline"
+                className="flex items-center gap-1 text-xs font-semibold hover:underline"
+                style={{ color: "#60a5fa" }}
             >
                 {expanded ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
                 {records.length} {fieldName} record{records.length !== 1 ? "s" : ""}
             </button>
 
             {expanded && (
-                <div className="mt-2 overflow-hidden rounded-lg border border-border">
+                <div className="mt-2 overflow-hidden rounded-lg"
+                    style={{ border: "1px solid rgba(255,255,255,0.1)" }}>
                     {records.length > 1 && (
-                        <div className="flex overflow-x-auto border-b border-border bg-muted/40">
+                        <div className="flex overflow-x-auto"
+                            style={{ borderBottom: "1px solid rgba(255,255,255,0.08)", backgroundColor: "rgba(255,255,255,0.03)" }}>
                             {records.map((rec, i) => {
                                 const label = (rec.ModelNumber as string) || (rec.model_number as string) || `#${i + 1}`;
                                 return (
                                     <button
                                         key={i}
                                         onClick={() => setActiveTab(i)}
-                                        className={`shrink-0 border-b-2 px-3 py-1.5 text-xs font-semibold transition-colors ${activeTab === i ? "border-primary text-primary" : "border-transparent text-muted-foreground"
-                                            }`}
+                                        className="shrink-0 px-3 py-1.5 text-xs font-semibold transition-colors"
+                                        style={{
+                                            borderBottom: activeTab === i ? "2px solid #3b82f6" : "2px solid transparent",
+                                            color: activeTab === i ? "#60a5fa" : "rgba(255,255,255,0.4)",
+                                        }}
                                     >
                                         {label}
                                     </button>
@@ -209,14 +228,17 @@ function NestedArray({ value, fieldName }: { value: unknown[]; fieldName: string
                             })}
                         </div>
                     )}
-                    <div className="grid max-h-56 grid-cols-2 gap-x-4 gap-y-1.5 overflow-y-auto p-3">
+                    <div className="grid max-h-56 grid-cols-2 gap-x-4 gap-y-1.5 overflow-y-auto p-3"
+                        style={{ backgroundColor: "rgba(13,21,38,0.8)" }}>
                         {keys.map((key) => {
                             const v = records[activeTab]?.[key];
                             return (
                                 <div key={key}>
-                                    <p className="text-xs text-muted-foreground">{key}</p>
-                                    <p className="text-xs font-medium text-foreground">
-                                        {v === null || v === undefined ? <span className="text-muted-foreground/40">—</span> : String(v)}
+                                    <p className="text-xs" style={{ color: "rgba(255,255,255,0.4)" }}>{key}</p>
+                                    <p className="text-xs font-medium" style={{ color: "rgba(255,255,255,0.85)" }}>
+                                        {v === null || v === undefined
+                                            ? <span style={{ color: "rgba(255,255,255,0.2)" }}>—</span>
+                                            : String(v)}
                                     </p>
                                 </div>
                             );
