@@ -362,12 +362,17 @@ function Index() {
   useEffect(() => {
     const BASE = (import.meta as { env?: { VITE_API_BASE?: string } }).env?.VITE_API_BASE
       ?? "https://ai-data-intelligence-1.onrender.com/api/v1";
-    // Health endpoint is at root level, not under /api/v1
     const healthUrl = BASE.replace(/\/api\/v1\/?$/, "") + "/health";
     const check = async () => {
       try {
-        const res = await fetch(healthUrl, { method: "GET", signal: AbortSignal.timeout(8000) });
-        setApiOnline(res.ok);
+        // Use no-cors so CORS headers don't block the ping.
+        // A successful fetch (even opaque) means the server is reachable.
+        await fetch(healthUrl, {
+          method: "GET",
+          mode: "no-cors",
+          signal: AbortSignal.timeout(10000),
+        });
+        setApiOnline(true); // if fetch didn't throw, server is up
       } catch {
         setApiOnline(false);
       }
