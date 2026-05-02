@@ -156,16 +156,6 @@ function Step1Upload({
   const allDocs = docsData ?? [];
   const anyParsing = allDocs.some((d: { status: string }) => ["parsing", "uploaded"].includes(d.status));
 
-  // Auto-select all parsed docs whenever the list changes
-  useEffect(() => {
-    const parsedIds = parsedDocs.map((d: { id: string }) => d.id);
-    if (mode === "batch" && parsedIds.length > 0) {
-      setBatchDocIds(parsedIds);
-    } else if (mode === "single" && parsedIds.length > 0 && !singleDocId) {
-      setSingleDocId(parsedIds[0]);
-    }
-  }, [parsedDocs.length, mode]);
-
   // Upload mutation for single/batch files
   const uploadMut = useMutation({
     mutationFn: (files: File[]) => {
@@ -730,7 +720,19 @@ function Step4Running({ mode, singleDocId, batchDocIds, zipFile, schemaId, provi
         .then(res => onDone(res.data, res.data.job_id))
         .catch(err => onError(err.response?.data?.detail ?? "Extraction failed"));
     } else if (mode === "batch") {
-      api.post("/batch/run-from-documents", { document_ids: batchDocIds, schema_id: schemaId, provider: provider.provider, api_key: provider.api_key, base_url: provider.base_url, model: provider.model, multi_record: multiRecord })
+      if (!batchDocIds || batchDocIds.length === 0) {
+        onError("No documents selected for batch extraction");
+        return;
+      }
+      api.post("/batch/run-from-documents", {
+        document_ids: batchDocIds,
+        schema_id: schemaId,
+        provider: provider.provider,
+        api_key: provider.api_key,
+        base_url: provider.base_url,
+        model: provider.model,
+        multi_record: multiRecord,
+      })
         .then(res => startPoll(res.data.batch_id))
         .catch(err => onError(err.response?.data?.detail ?? "Batch failed"));
     } else if (mode === "zip" && zipFile) {
@@ -1029,6 +1031,23 @@ function ExtractionWizard() {
   const [batchDocIds, setBatchDocIds] = useState<string[]>([]);
   const [zipFile, setZipFile] = useState<File | null>(null);
   const [schemaId, setSchemaId] = useState("");
+
+  // Keep batchDocIds in sync with all parsed docs at the wizard level
+  const { data: allDocsData } = useQuery({
+    queryKey: ["documents"],
+    queryFn: () => api.get("/documents").then(r => r.data.documents ?? []),
+    refetchInterval: 3000,
+  });
+  const allParsedDocs = (allDocsData ?? []).filter((d: { status: string }) => d.status === "parsed");
+
+  useEffect(() => {
+    const parsedIds = allParsedDocs.map((d: { id: string }) => d.id);
+    if (mode === "batch" && parsedIds.length > 0) {
+      setBatchDocIds(parsedIds);
+    } else if (mode === "single" && parsedIds.length > 0 && !singleDocId) {
+      setSingleDocId(parsedIds[0]);
+    }
+  }, [allParsedDocs.length, mode]);
   const [provider, setProvider] = useState<ProviderValues>({ provider: "landingai", api_key: storedKey("landingai"), model: "dpt-2-latest", base_url: "" });
   const [multiRecord, setMultiRecord] = useState(false);
   const [smartRetry, setSmartRetry] = useState(false);
