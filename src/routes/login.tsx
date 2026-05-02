@@ -27,7 +27,14 @@ function Login() {
     try {
       const { data } = await api.post("/auth/login", { email: form.get("email"), password: form.get("password") });
       saveAuth(data); toast.success("Signed in"); navigate({ to: "/dashboard" });
-    } catch { setError("Unable to sign in. Check your credentials or backend connection."); toast.error("Login failed"); }
+    } catch (err: unknown) {
+      const status = (err as { response?: { status?: number; data?: { detail?: string } } })?.response?.status;
+      const detail = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail;
+      if (status === 401) setError("Invalid email or password. If this is a new deployment, please register a new account.");
+      else if (status === 0 || !status) setError("Cannot reach the backend server. Check your connection.");
+      else setError(detail ?? "Login failed. Please try again.");
+      toast.error("Login failed");
+    }
     finally { setLoading(false); }
   }
 
