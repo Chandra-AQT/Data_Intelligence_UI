@@ -411,55 +411,238 @@ function Step1Upload({
 function Step2Schema({ schemaId, setSchemaId, onNext, onBack }: {
   schemaId: string; setSchemaId: (id: string) => void; onNext: () => void; onBack: () => void;
 }) {
-  const { data, isLoading } = useQuery({ queryKey: ["schemas"], queryFn: () => api.get("/schemas").then(r => r.data.schemas ?? []) });
+  const qc = useQueryClient();
+  const [tab, setTab] = useState<"select" | "upload" | "create" | "ai">("select");
+  const [newName, setNewName] = useState("");
+  const [newDesc, setNewDesc] = useState("");
+  const [newDomain, setNewDomain] = useState("");
+  const [newFields, setNewFields] = useState([{ name: "", type: "string", required: false }]);
+  const [aiDocId, setAiDocId] = useState("");
+  const [aiKey, setAiKey] = useState(() => { try { return localStorage.getItem("aqt_openai_key") ?? ""; } catch { return ""; } });
+  const [aiModel, setAiModel] = useState("gpt-4o-mini");
+  const [aiDomain, setAiDomain] = useState("");
+  const [aiGenerating, setAiGenerating] = useState(false);
+
+  const { data, isLoading, refetch } = useQuery({ queryKey: ["schemas"], queryFn: () => api.get("/schemas").then(r => r.data.schemas ?? []) });
+  const { data: docsData } = useQuery({ queryKey: ["documents"], queryFn: () => api.get("/documents").then(r => r.data.documents ?? []) });
   const schemas = data ?? [];
+  const parsedDocs = (docsData ?? []).filter((d: { status: string }) => d.status === "parsed");
+
+  const uploadMut = useMutation({
+    mutationFn: (file: File) => { const fd = new FormData(); fd.append("file", file); return api.post("/schemas/upload", fd); },
+    onSuccess: (res) => { toast.success(`Schema uploaded: ${res.data.name ?? "done"}`); refetch(); setTab("select"); },
+    onError: () => toast.error("Upload failed"),
+  });
+
+  const createMut = useMutation({
+    mutationFn: () => api.post("/schemas", { name: newName, description: newDesc, domain: newDomain, fields: newFields }),
+    onSuccess: (res) => {
+      toast.success("Schema created"); refetch();
+      setSchemaId(res.data.id ?? ""); setTab("select");
+      setNewName(""); setNewDesc(""); setNewDomain(""); setNewFields([{ name: "", type: "string", required: false }]);
+    },
+    onError: () => toast.error("Failed to create schema"),
+  });
+
+  const generateAI = async () => {
+    if (!aiDocId) return toast.error("Select a document");
+    if (!aiKey) return toast.error("Enter OpenAI API key");
+    setAiGenerating(true);
+    try {
+      const res = await api.post("/intelligence/auto-schema", { document_id: aiDocId, api_key: aiKey, model: aiModel, domain_hint: aiDomain, max_fields: 30, save: true });
+      toast.success(`Schema generated: ${res.data.field_count} fields`);
+      refetch(); setTab("select");
+    } catch { toast.error("Schema generation failed"); }
+    finally { setAiGenerating(false); }
+  };
+
+  const TABS = [
+    { id: "select" as const, label: "Select", icon: "📋" },
+    { id: "upload" as const, label: "Upload JSON", icon: "📤" },
+    { id: "create" as const, label: "Create", icon: "✏️" },
+    { id: "ai" as const, label: "AI Generate", icon: "🤖" },
+  ];
+
+  const FIELD_TYPES = ["string", "number", "integer", "boolean", "date", "currency", "email", "phone", "url", "list", "object"];
+
   return (
-    <div className="space-y-6">
-      <div className="rounded-2xl p-5" style={CARD}>
-        <p className="text-xs font-bold uppercase tracking-widest mb-4" style={{ color: "#22d3ee" }}> SELECT SCHEMA</p>
-        {isLoading ? (
-          <div className="space-y-2">{[1, 2, 3].map(i => <div key={i} className="h-16 rounded-xl animate-pulse" style={{ backgroundColor: "rgba(255,255,255,0.04)" }} />)}</div>
-        ) : schemas.length === 0 ? (
-          <div className="py-10 text-center">
-            <Layers3 className="mx-auto h-10 w-10 mb-3 opacity-20" style={{ color: "#60a5fa" }} />
-            <p className="text-sm font-bold" style={{ color: "rgba(255,255,255,0.3)" }}>No schemas yet</p>
-            <p className="text-xs mt-1" style={{ color: "rgba(255,255,255,0.2)" }}>Create a schema in the Schemas page first</p>
-          </div>
-        ) : (
-          <div className="space-y-2 max-h-80 overflow-y-auto pr-1">
-            {schemas.map((s: { id: string; name: string; description: string; field_count: number; domain: string }) => {
-              const sel = schemaId === s.id;
-              return (
-                <button key={s.id} onClick={() => setSchemaId(s.id)}
-                  className="w-full flex items-center gap-4 rounded-xl px-4 py-3.5 text-left transition-all duration-150 hover:-translate-y-0.5"
-                  style={{ backgroundColor: sel ? "rgba(37,99,235,0.12)" : "rgba(255,255,255,0.02)", border: sel ? "1px solid rgba(37,99,235,0.35)" : "1px solid rgba(255,255,255,0.06)" }}>
-                  <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl"
-                    style={{ background: sel ? "linear-gradient(135deg,#2563eb,#7c3aed)" : "rgba(255,255,255,0.06)" }}>
-                    <Layers3 className="h-5 w-5 text-white" />
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm font-bold text-white truncate">{s.name}</p>
-                    <div className="flex items-center gap-2 mt-0.5">
-                      <span className="text-xs px-1.5 py-0.5 rounded-md font-bold" style={{ backgroundColor: "rgba(37,99,235,0.15)", color: "#60a5fa" }}>{s.field_count} fields</span>
-                      {s.domain && <span className="text-xs" style={{ color: "rgba(255,255,255,0.3)" }}>{s.domain}</span>}
-                    </div>
-                  </div>
-                  {sel && <CheckCircle2 className="h-4 w-4 shrink-0" style={{ color: "#22c55e" }} />}
-                </button>
-              );
-            })}
-          </div>
-        )}
+    <div className="space-y-5">
+      {/* Tab bar */}
+      <div className="flex gap-2 flex-wrap">
+        {TABS.map(t => (
+          <button key={t.id} onClick={() => setTab(t.id)}
+            className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-bold transition-all"
+            style={{
+              background: tab === t.id ? "linear-gradient(135deg,#2563eb,#7c3aed)" : "rgba(255,255,255,0.04)",
+              color: tab === t.id ? "#fff" : "rgba(255,255,255,0.5)",
+              border: tab === t.id ? "none" : "1px solid rgba(255,255,255,0.08)",
+            }}>
+            <span>{t.icon}</span>{t.label}
+          </button>
+        ))}
       </div>
+
+      {/* ── SELECT tab ── */}
+      {tab === "select" && (
+        <div className="rounded-2xl p-5" style={CARD}>
+          <p className="text-xs font-bold uppercase tracking-widest mb-4" style={{ color: "#22d3ee" }}>● SELECT SCHEMA</p>
+          {isLoading ? (
+            <div className="space-y-2">{[1, 2, 3].map(i => <div key={i} className="h-16 rounded-xl animate-pulse" style={{ backgroundColor: "rgba(255,255,255,0.04)" }} />)}</div>
+          ) : schemas.length === 0 ? (
+            <div className="py-10 text-center">
+              <Layers3 className="mx-auto h-10 w-10 mb-3 opacity-20" style={{ color: "#60a5fa" }} />
+              <p className="text-sm font-bold" style={{ color: "rgba(255,255,255,0.3)" }}>No schemas yet</p>
+              <p className="text-xs mt-2" style={{ color: "rgba(255,255,255,0.2)" }}>Use the tabs above to upload, create, or AI-generate a schema</p>
+            </div>
+          ) : (
+            <div className="space-y-2 max-h-72 overflow-y-auto pr-1">
+              {schemas.map((s: { id: string; name: string; field_count: number; domain: string }) => {
+                const sel = schemaId === s.id;
+                return (
+                  <button key={s.id} onClick={() => setSchemaId(s.id)}
+                    className="w-full flex items-center gap-4 rounded-xl px-4 py-3.5 text-left transition-all hover:-translate-y-0.5"
+                    style={{ backgroundColor: sel ? "rgba(37,99,235,0.12)" : "rgba(255,255,255,0.02)", border: sel ? "1px solid rgba(37,99,235,0.35)" : "1px solid rgba(255,255,255,0.06)" }}>
+                    <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl"
+                      style={{ background: sel ? "linear-gradient(135deg,#2563eb,#7c3aed)" : "rgba(255,255,255,0.06)" }}>
+                      <Layers3 className="h-5 w-5 text-white" />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-bold text-white truncate">{s.name}</p>
+                      <div className="flex items-center gap-2 mt-0.5">
+                        <span className="text-xs px-1.5 py-0.5 rounded-md font-bold" style={{ backgroundColor: "rgba(37,99,235,0.15)", color: "#60a5fa" }}>{s.field_count} fields</span>
+                        {s.domain && <span className="text-xs" style={{ color: "rgba(255,255,255,0.3)" }}>{s.domain}</span>}
+                      </div>
+                    </div>
+                    {sel && <CheckCircle2 className="h-4 w-4 shrink-0" style={{ color: "#22c55e" }} />}
+                  </button>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ── UPLOAD tab ── */}
+      {tab === "upload" && (
+        <div className="rounded-2xl p-5 space-y-4" style={CARD}>
+          <p className="text-xs font-bold uppercase tracking-widest" style={{ color: "#22d3ee" }}>● UPLOAD JSON SCHEMA</p>
+          <p className="text-sm" style={{ color: "rgba(255,255,255,0.45)" }}>Upload any JSON schema file — the system adapts it automatically to the internal format.</p>
+          <label className="flex flex-col items-center gap-3 rounded-2xl p-8 cursor-pointer transition-all hover:bg-white/[0.03]"
+            style={{ border: "2px dashed rgba(255,255,255,0.12)" }}>
+            <Upload className="h-10 w-10" style={{ color: "rgba(255,255,255,0.3)" }} />
+            <p className="text-sm font-bold text-white">Click to select JSON file</p>
+            <p className="text-xs" style={{ color: "rgba(255,255,255,0.3)" }}>Supports any JSON schema format</p>
+            <input type="file" accept=".json" className="hidden"
+              onChange={e => { if (e.target.files?.[0]) uploadMut.mutate(e.target.files[0]); }} />
+          </label>
+          {uploadMut.isPending && (
+            <div className="flex items-center gap-2 text-sm" style={{ color: "#60a5fa" }}>
+              <Loader2 className="h-4 w-4 animate-spin" />Uploading and adapting schema...
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ── CREATE tab ── */}
+      {tab === "create" && (
+        <div className="rounded-2xl p-5 space-y-4" style={CARD}>
+          <p className="text-xs font-bold uppercase tracking-widest" style={{ color: "#22d3ee" }}>● CREATE SCHEMA</p>
+          <input value={newName} onChange={e => setNewName(e.target.value)} placeholder="Schema name *"
+            className="w-full h-10 rounded-lg px-3 text-sm" style={INPUT} />
+          <input value={newDesc} onChange={e => setNewDesc(e.target.value)} placeholder="Description (optional)"
+            className="w-full h-10 rounded-lg px-3 text-sm" style={INPUT} />
+          <input value={newDomain} onChange={e => setNewDomain(e.target.value)} placeholder="Domain (e.g. HVAC, Foodservice)"
+            className="w-full h-10 rounded-lg px-3 text-sm" style={INPUT} />
+          <div>
+            <p className="text-xs font-bold uppercase tracking-wide mb-2" style={{ color: "rgba(255,255,255,0.4)" }}>Fields</p>
+            <div className="space-y-2 max-h-48 overflow-y-auto pr-1">
+              {newFields.map((f, i) => (
+                <div key={i} className="flex gap-2 items-center">
+                  <input value={f.name} onChange={e => setNewFields(fs => fs.map((x, j) => j === i ? { ...x, name: e.target.value } : x))}
+                    placeholder="field_name" className="flex-1 h-9 rounded-lg px-3 text-xs" style={INPUT} />
+                  <select value={f.type} onChange={e => setNewFields(fs => fs.map((x, j) => j === i ? { ...x, type: e.target.value } : x))}
+                    className="h-9 rounded-lg px-2 text-xs" style={INPUT}>
+                    {FIELD_TYPES.map(t => <option key={t}>{t}</option>)}
+                  </select>
+                  <label className="flex items-center gap-1 text-xs shrink-0" style={{ color: "rgba(255,255,255,0.5)" }}>
+                    <input type="checkbox" checked={f.required} onChange={e => setNewFields(fs => fs.map((x, j) => j === i ? { ...x, required: e.target.checked } : x))} />
+                    Req
+                  </label>
+                  <button onClick={() => setNewFields(fs => fs.filter((_, j) => j !== i))}
+                    className="h-9 w-9 flex items-center justify-center rounded-lg hover:bg-red-500/20 transition-colors shrink-0"
+                    style={{ color: "#ef4444" }}>×</button>
+                </div>
+              ))}
+            </div>
+            <button onClick={() => setNewFields(fs => [...fs, { name: "", type: "string", required: false }])}
+              className="mt-2 text-xs font-bold hover:text-white transition-colors" style={{ color: "#60a5fa" }}>
+              + Add Field
+            </button>
+          </div>
+          <button onClick={() => createMut.mutate()} disabled={!newName || createMut.isPending}
+            className="w-full flex items-center justify-center gap-2 rounded-xl py-2.5 text-sm font-black text-white disabled:opacity-50"
+            style={{ background: "linear-gradient(135deg,#2563eb,#7c3aed)" }}>
+            {createMut.isPending ? <><Loader2 className="h-4 w-4 animate-spin" />Creating...</> : "Save Schema"}
+          </button>
+        </div>
+      )}
+
+      {/* ── AI GENERATE tab ── */}
+      {tab === "ai" && (
+        <div className="rounded-2xl p-5 space-y-4" style={CARD}>
+          <p className="text-xs font-bold uppercase tracking-widest" style={{ color: "#22d3ee" }}>● AI SCHEMA GENERATOR</p>
+          <p className="text-sm" style={{ color: "rgba(255,255,255,0.45)" }}>GPT-4o analyzes your document and builds the perfect extraction schema automatically.</p>
+          <div>
+            <label className="block text-xs font-bold uppercase tracking-wide mb-1.5" style={{ color: "rgba(255,255,255,0.4)" }}>Document</label>
+            <select value={aiDocId} onChange={e => setAiDocId(e.target.value)} className="w-full h-10 rounded-lg px-3 text-sm" style={INPUT}>
+              <option value="">Select a parsed document...</option>
+              {parsedDocs.map((d: { id: string; file_name: string }) => <option key={d.id} value={d.id}>{d.file_name}</option>)}
+            </select>
+          </div>
+          <div>
+            <label className="block text-xs font-bold uppercase tracking-wide mb-1.5" style={{ color: "rgba(255,255,255,0.4)" }}>OpenAI API Key</label>
+            <input type="password" value={aiKey} onChange={e => { setAiKey(e.target.value); try { localStorage.setItem("aqt_openai_key", e.target.value); } catch { } }}
+              placeholder="sk-..." className="w-full h-10 rounded-lg px-3 text-sm font-mono" style={INPUT} />
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-xs font-bold uppercase tracking-wide mb-1.5" style={{ color: "rgba(255,255,255,0.4)" }}>Model</label>
+              <select value={aiModel} onChange={e => setAiModel(e.target.value)} className="w-full h-10 rounded-lg px-3 text-sm" style={INPUT}>
+                <option value="gpt-4o-mini">gpt-4o-mini (Faster)</option>
+                <option value="gpt-4o">gpt-4o (Best)</option>
+              </select>
+            </div>
+            <div>
+              <label className="block text-xs font-bold uppercase tracking-wide mb-1.5" style={{ color: "rgba(255,255,255,0.4)" }}>Domain Hint</label>
+              <input value={aiDomain} onChange={e => setAiDomain(e.target.value)} placeholder="e.g. HVAC, Foodservice"
+                className="w-full h-10 rounded-lg px-3 text-sm" style={INPUT} />
+            </div>
+          </div>
+          <button onClick={generateAI} disabled={!aiDocId || !aiKey || aiGenerating}
+            className="w-full flex items-center justify-center gap-2 rounded-xl py-2.5 text-sm font-black text-white disabled:opacity-50"
+            style={{ background: "linear-gradient(135deg,#2563eb,#7c3aed)" }}>
+            {aiGenerating ? <><Loader2 className="h-4 w-4 animate-spin" />Generating schema...</> : <>🤖 Generate Schema with AI</>}
+          </button>
+        </div>
+      )}
+
       {schemaId && (
         <div className="flex items-center gap-3 rounded-xl px-4 py-3" style={{ backgroundColor: "rgba(34,197,94,0.08)", border: "1px solid rgba(34,197,94,0.2)" }}>
           <CheckCircle2 className="h-4 w-4 shrink-0" style={{ color: "#22c55e" }} />
           <p className="text-sm font-bold" style={{ color: "#22c55e" }}>Schema: {schemas.find((s: { id: string; name: string }) => s.id === schemaId)?.name}</p>
         </div>
       )}
+
       <div className="flex justify-between">
-        <button onClick={onBack} className="flex items-center gap-2 rounded-xl px-6 py-3 text-sm font-bold transition-all hover:bg-white/10" style={{ backgroundColor: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.08)", color: "rgba(255,255,255,0.6)" }}><ChevronLeft className="h-4 w-4" /> Back</button>
-        <button onClick={onNext} disabled={!schemaId} className="flex items-center gap-2 rounded-xl px-8 py-3 text-sm font-black text-white transition-all disabled:opacity-40 hover:-translate-y-0.5" style={{ background: schemaId ? "linear-gradient(135deg,#2563eb,#7c3aed)" : "rgba(255,255,255,0.06)" }}>Next: Engine <ChevronRight className="h-4 w-4" /></button>
+        <button onClick={onBack} className="flex items-center gap-2 rounded-xl px-6 py-3 text-sm font-bold transition-all hover:bg-white/10"
+          style={{ backgroundColor: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.08)", color: "rgba(255,255,255,0.6)" }}>
+          <ChevronLeft className="h-4 w-4" /> Back
+        </button>
+        <button onClick={onNext} disabled={!schemaId}
+          className="flex items-center gap-2 rounded-xl px-8 py-3 text-sm font-black text-white transition-all disabled:opacity-40 hover:-translate-y-0.5"
+          style={{ background: schemaId ? "linear-gradient(135deg,#2563eb,#7c3aed)" : "rgba(255,255,255,0.06)" }}>
+          Next: Engine <ChevronRight className="h-4 w-4" />
+        </button>
       </div>
     </div>
   );
