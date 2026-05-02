@@ -6,7 +6,7 @@ import toast from "react-hot-toast";
 import {
   FileText, Boxes, FolderArchive, Upload, Layers3, Cpu, Zap, BarChart2,
   CheckCircle2, ChevronRight, ChevronLeft, Download, Loader2,
-  RotateCcw, AlertCircle, X, FolderOpen
+  RotateCcw, AlertCircle, X, FolderOpen, Eye
 } from "lucide-react";
 import { pushNotification } from "@/components/aqt/app-shell";
 import { AppShell } from "@/components/aqt/app-shell";
@@ -89,6 +89,16 @@ function Step1Upload({
   const parsedDocs = (docsData ?? []).filter((d: { status: string }) => d.status === "parsed");
   const allDocs = docsData ?? [];
   const anyParsing = allDocs.some((d: { status: string }) => ["parsing", "uploaded"].includes(d.status));
+
+  // Auto-select all parsed docs whenever the list changes
+  useEffect(() => {
+    const parsedIds = parsedDocs.map((d: { id: string }) => d.id);
+    if (mode === "batch" && parsedIds.length > 0) {
+      setBatchDocIds(parsedIds);
+    } else if (mode === "single" && parsedIds.length > 0 && !singleDocId) {
+      setSingleDocId(parsedIds[0]);
+    }
+  }, [parsedDocs.length, mode]);
 
   // Upload mutation for single/batch files
   const uploadMut = useMutation({
@@ -234,24 +244,18 @@ function Step1Upload({
             </p>
           </div>
 
-          {/* Parsed document list */}
+          {/* Document list */}
           <div className="rounded-2xl p-5" style={CARD}>
             <div className="flex items-center justify-between mb-4">
               <div>
                 <p className="text-xs font-bold uppercase tracking-widest" style={{ color: "#22d3ee" }}>
-                  ● {mode === "single" ? "SELECT DOCUMENT" : "SELECT DOCUMENTS"}
+                  ● DOCUMENTS
                 </p>
                 <p className="text-sm font-black text-white mt-1">
-                  {parsedDocs.length} ready · {allDocs.length} total
+                  {parsedDocs.length} ready to extract · {allDocs.length} total
                   {anyParsing && <span className="ml-2 text-xs animate-pulse" style={{ color: "#60a5fa" }}>⟳ Parsing...</span>}
                 </p>
               </div>
-              {mode === "batch" && parsedDocs.length > 0 && (
-                <div className="flex gap-2">
-                  <Button size="sm" variant="outline" onClick={() => setBatchDocIds(parsedDocs.map((d: { id: string }) => d.id))}>All Parsed</Button>
-                  <Button size="sm" variant="outline" onClick={() => setBatchDocIds([])}>Clear</Button>
-                </div>
-              )}
             </div>
 
             {isLoading ? (
@@ -269,55 +273,63 @@ function Step1Upload({
                 {allDocs.map((doc: { id: string; file_name: string; page_count: number; file_size: number; status: string }) => {
                   const isParsed = doc.status === "parsed";
                   const isParsing = doc.status === "parsing" || doc.status === "uploaded";
-                  const sel = mode === "single" ? singleDocId === doc.id : batchDocIds.includes(doc.id);
                   return (
-                    <button key={doc.id}
-                      onClick={() => { if (!isParsed) return; mode === "single" ? setSingleDocId(doc.id) : toggleBatch(doc.id); }}
-                      disabled={!isParsed}
-                      className="w-full flex items-center gap-3 rounded-xl px-4 py-3 text-left transition-all duration-150"
+                    <div key={doc.id}
+                      className="flex items-center gap-3 rounded-xl px-4 py-3"
                       style={{
-                        backgroundColor: sel ? "rgba(37,99,235,0.12)" : "rgba(255,255,255,0.02)",
-                        border: sel ? "1px solid rgba(37,99,235,0.35)" : "1px solid rgba(255,255,255,0.06)",
-                        opacity: isParsed ? 1 : 0.6,
-                        cursor: isParsed ? "pointer" : "not-allowed",
+                        backgroundColor: isParsed ? "rgba(37,99,235,0.08)" : "rgba(255,255,255,0.02)",
+                        border: isParsed ? "1px solid rgba(37,99,235,0.2)" : "1px solid rgba(255,255,255,0.06)",
+                        opacity: isParsed ? 1 : 0.65,
                       }}>
+                      {/* File icon */}
                       <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg"
-                        style={{ backgroundColor: sel ? "rgba(37,99,235,0.2)" : "rgba(255,255,255,0.06)" }}>
-                        <FileText className="h-4 w-4" style={{ color: sel ? "#60a5fa" : "rgba(255,255,255,0.4)" }} />
+                        style={{ backgroundColor: isParsed ? "rgba(37,99,235,0.2)" : "rgba(255,255,255,0.06)" }}>
+                        <FileText className="h-4 w-4" style={{ color: isParsed ? "#60a5fa" : "rgba(255,255,255,0.4)" }} />
                       </div>
+                      {/* Info */}
                       <div className="flex-1 min-w-0">
                         <p className="text-sm font-semibold text-white truncate">{doc.file_name}</p>
                         <div className="flex items-center gap-2 mt-0.5">
-                          {isParsed && <span className="text-xs" style={{ color: "rgba(255,255,255,0.3)" }}>{doc.page_count}p · {(doc.file_size / 1024).toFixed(0)} KB</span>}
-                          {isParsing && <span className="text-xs animate-pulse" style={{ color: "#60a5fa" }}>⟳ Parsing... wait a moment</span>}
+                          {isParsed && <span className="text-xs" style={{ color: "rgba(255,255,255,0.35)" }}>{doc.page_count}p · {(doc.file_size / 1024).toFixed(0)} KB</span>}
+                          {isParsing && <span className="text-xs animate-pulse" style={{ color: "#60a5fa" }}>⟳ Parsing...</span>}
                           {doc.status === "error" && <span className="text-xs" style={{ color: "#ef4444" }}>✗ Parse failed</span>}
                         </div>
                       </div>
-                      {sel && <CheckCircle2 className="h-4 w-4 shrink-0" style={{ color: "#22c55e" }} />}
-                      {isParsing && (
-                        <div className="h-4 w-4 shrink-0 rounded-full border-2 border-blue-400 border-t-transparent animate-spin" />
+                      {/* Status */}
+                      {isParsed && <CheckCircle2 className="h-4 w-4 shrink-0" style={{ color: "#22c55e" }} />}
+                      {isParsing && <div className="h-4 w-4 shrink-0 rounded-full border-2 border-blue-400 border-t-transparent animate-spin" />}
+                      {/* Eye icon — view parsed content */}
+                      {isParsed && (
+                        <button
+                          onClick={() => {
+                            const backendUrl = (import.meta as { env?: { VITE_API_URL?: string } }).env?.VITE_API_URL?.replace("/api/v1", "") ?? "https://ai-data-intelligence-1.onrender.com";
+                            window.open(`${backendUrl}/api/v1/documents/${doc.id}/parsed`, "_blank");
+                          }}
+                          className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg transition-all hover:bg-white/10 hover:scale-110"
+                          style={{ color: "rgba(255,255,255,0.4)" }}
+                          title="View parsed content"
+                        >
+                          <Eye className="h-3.5 w-3.5" />
+                        </button>
                       )}
-                    </button>
+                    </div>
                   );
                 })}
               </div>
-            )}
-            {anyParsing && (
-              <p className="mt-3 text-xs animate-pulse" style={{ color: "#60a5fa" }}>⟳ Documents are being parsed...</p>
             )}
           </div>
         </div>
       )}
 
-      {/* Selection summary */}
+      {/* Auto-selection summary */}
       {canNext && mode !== "zip" && (
         <div className="flex items-center gap-3 rounded-xl px-4 py-3"
           style={{ backgroundColor: "rgba(34,197,94,0.08)", border: "1px solid rgba(34,197,94,0.2)" }}>
           <CheckCircle2 className="h-4 w-4 shrink-0" style={{ color: "#22c55e" }} />
           <p className="text-sm font-bold" style={{ color: "#22c55e" }}>
             {mode === "single"
-              ? `Selected: ${parsedDocs.find((d: { id: string; file_name: string }) => d.id === singleDocId)?.file_name}`
-              : `${batchDocIds.length} document${batchDocIds.length > 1 ? "s" : ""} selected for batch extraction`}
+              ? `Ready: ${parsedDocs.find((d: { id: string; file_name: string }) => d.id === singleDocId)?.file_name}`
+              : `${batchDocIds.length} document${batchDocIds.length > 1 ? "s" : ""} will be extracted`}
           </p>
         </div>
       )}
