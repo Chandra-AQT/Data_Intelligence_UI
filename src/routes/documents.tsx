@@ -1,5 +1,5 @@
-import { useCallback, useState } from "react";
-import { createFileRoute, Link } from "@tanstack/react-router";
+import { useCallback, useState, useEffect } from "react";
+import { createFileRoute, Link, useRouterState } from "@tanstack/react-router";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useDropzone } from "react-dropzone";
 import toast from "react-hot-toast";
@@ -302,6 +302,10 @@ function Documents() {
   const [statusFilter, setStatusFilter] = useState("all");
   const [confirmDelete, setConfirmDelete] = useState<{ ids: string[]; label: string } | null>(null);
 
+  // Auto-open viewer if ?view=docId is in the URL
+  const routerState = useRouterState();
+  const viewParam = new URLSearchParams(routerState.location.search).get("view");
+
   const { data, isLoading } = useQuery({
     queryKey: ["documents"],
     queryFn: () => api.get("/documents").then((r) => r.data.documents ?? []),
@@ -318,6 +322,14 @@ function Documents() {
 
   const documents: DocMeta[] = data ?? [];
   const allJobs: ExtractionJob[] = jobsData ?? [];
+
+  // Auto-open viewer when navigated with ?view=docId
+  useEffect(() => {
+    if (viewParam && documents.length > 0 && !viewingDoc) {
+      const doc = documents.find(d => d.id === viewParam);
+      if (doc) setViewingDoc(doc);
+    }
+  }, [viewParam, documents.length]);
 
   // Filter documents by search + status
   const filteredDocs = documents.filter(doc => {

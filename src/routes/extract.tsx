@@ -1,5 +1,5 @@
 ﻿import { useState, useEffect, useRef, useCallback } from "react";
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useDropzone } from "react-dropzone";
 import toast from "react-hot-toast";
@@ -146,7 +146,7 @@ function Step1Upload({
   onNext: () => void;
 }) {
   const qc = useQueryClient();
-  const [viewingDoc, setViewingDoc] = useState<{ id: string; file_name: string } | null>(null);
+  const navigate = useNavigate();
   const { data: docsData, isLoading } = useQuery({
     queryKey: ["documents"],
     queryFn: () => api.get("/documents").then(r => r.data.documents ?? []),
@@ -367,15 +367,14 @@ function Step1Upload({
                       {/* Eye icon — view parsed content */}
                       {isParsed && (
                         <button
-                          onClick={() => setViewingDoc({ id: doc.id, file_name: doc.file_name })}
+                          onClick={() => navigate({ to: "/documents", search: { view: doc.id } as never })}
                           className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg transition-all hover:bg-white/10 hover:scale-110"
                           style={{ color: "rgba(255,255,255,0.4)" }}
                           title="View parsed content"
                         >
                           <Eye className="h-3.5 w-3.5" />
                         </button>
-                      )}
-                    </div>
+                      )}                    </div>
                   );
                 })}
               </div>
@@ -404,15 +403,6 @@ function Step1Upload({
           Next: Schema <ChevronRight className="h-4 w-4" />
         </button>
       </div>
-
-      {/* Parsed content viewer modal */}
-      {viewingDoc && (
-        <ParsedViewer
-          docId={viewingDoc.id}
-          fileName={viewingDoc.file_name}
-          onClose={() => setViewingDoc(null)}
-        />
-      )}
     </div>
   );
 }
