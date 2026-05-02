@@ -326,45 +326,66 @@ function Step1Upload({
               </div>
             ) : (
               <div className="space-y-1.5 max-h-64 overflow-y-auto pr-1">
+                {mode === "single" && parsedDocs.length > 0 && !singleDocId && (
+                  <p className="text-xs mb-2 text-center" style={{ color: "rgba(255,255,255,0.35)" }}>
+                    👆 Click a parsed document below to select it for extraction
+                  </p>
+                )}
                 {allDocs.map((doc: { id: string; file_name: string; page_count: number; file_size: number; status: string }) => {
                   const isParsed = doc.status === "parsed";
                   const isParsing = doc.status === "parsing" || doc.status === "uploaded";
+                  const isSelected = mode === "single" ? singleDocId === doc.id : batchDocIds.includes(doc.id);
                   return (
                     <div key={doc.id}
-                      className="flex items-center gap-3 rounded-xl px-4 py-3"
+                      onClick={() => {
+                        if (mode === "single" && isParsed) setSingleDocId(doc.id);
+                        else if (mode === "batch" && isParsed) toggleBatch(doc.id);
+                      }}
+                      className="flex items-center gap-3 rounded-xl px-4 py-3 transition-all duration-150"
                       style={{
-                        backgroundColor: isParsed ? "rgba(37,99,235,0.08)" : "rgba(255,255,255,0.02)",
-                        border: isParsed ? "1px solid rgba(37,99,235,0.2)" : "1px solid rgba(255,255,255,0.06)",
-                        opacity: isParsed ? 1 : 0.65,
+                        backgroundColor: isSelected
+                          ? "rgba(37,99,235,0.18)"
+                          : isParsed ? "rgba(37,99,235,0.05)" : "rgba(255,255,255,0.02)",
+                        border: isSelected
+                          ? "1px solid rgba(37,99,235,0.55)"
+                          : isParsed ? "1px solid rgba(37,99,235,0.15)" : "1px solid rgba(255,255,255,0.06)",
+                        opacity: isParsed ? 1 : 0.55,
+                        cursor: isParsed ? "pointer" : "default",
+                        boxShadow: isSelected ? "0 0 12px rgba(37,99,235,0.2)" : "none",
                       }}>
                       {/* File icon */}
                       <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg"
-                        style={{ backgroundColor: isParsed ? "rgba(37,99,235,0.2)" : "rgba(255,255,255,0.06)" }}>
+                        style={{ backgroundColor: isSelected ? "rgba(37,99,235,0.35)" : isParsed ? "rgba(37,99,235,0.15)" : "rgba(255,255,255,0.06)" }}>
                         <FileText className="h-4 w-4" style={{ color: isParsed ? "#60a5fa" : "rgba(255,255,255,0.4)" }} />
                       </div>
                       {/* Info */}
                       <div className="flex-1 min-w-0">
                         <p className="text-sm font-semibold text-white truncate">{doc.file_name}</p>
                         <div className="flex items-center gap-2 mt-0.5">
+                          {isParsed && !isSelected && mode === "single" && (
+                            <span className="text-[10px] font-bold" style={{ color: "rgba(96,165,250,0.6)" }}>Click to select</span>
+                          )}
                           {isParsed && <span className="text-xs" style={{ color: "rgba(255,255,255,0.35)" }}>{doc.page_count}p · {(doc.file_size / 1024).toFixed(0)} KB</span>}
                           {isParsing && <span className="text-xs animate-pulse" style={{ color: "#60a5fa" }}>⟳ Parsing...</span>}
                           {doc.status === "error" && <span className="text-xs" style={{ color: "#ef4444" }}>✗ Parse failed</span>}
                         </div>
                       </div>
-                      {/* Status */}
-                      {isParsed && <CheckCircle2 className="h-4 w-4 shrink-0" style={{ color: "#22c55e" }} />}
+                      {/* Status / selection indicator */}
+                      {isSelected && <CheckCircle2 className="h-4 w-4 shrink-0" style={{ color: "#22c55e" }} />}
+                      {!isSelected && isParsed && <div className="h-4 w-4 shrink-0 rounded-full" style={{ border: "2px solid rgba(255,255,255,0.15)" }} />}
                       {isParsing && <div className="h-4 w-4 shrink-0 rounded-full border-2 border-blue-400 border-t-transparent animate-spin" />}
                       {/* Eye icon — view parsed content */}
                       {isParsed && (
                         <button
-                          onClick={() => navigate({ to: "/documents", search: { view: doc.id } as never })}
+                          onClick={(e) => { e.stopPropagation(); navigate({ to: "/documents", search: { view: doc.id } as never }); }}
                           className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg transition-all hover:bg-white/10 hover:scale-110"
                           style={{ color: "rgba(255,255,255,0.4)" }}
                           title="View parsed content"
                         >
                           <Eye className="h-3.5 w-3.5" />
                         </button>
-                      )}                    </div>
+                      )}
+                    </div>
                   );
                 })}
               </div>
@@ -1044,10 +1065,12 @@ function ExtractionWizard() {
     const parsedIds = allParsedDocs.map((d: { id: string }) => d.id);
     if (mode === "batch" && parsedIds.length > 0) {
       setBatchDocIds(parsedIds);
-    } else if (mode === "single" && parsedIds.length > 0 && !singleDocId) {
-      setSingleDocId(parsedIds[0]);
     }
-  }, [allParsedDocs.length, mode]);
+    // Single mode: user must manually click to select — no auto-selection
+    if (mode === "single") {
+      setSingleDocId(""); // clear on mode switch so user picks fresh
+    }
+  }, [mode]);
   const [provider, setProvider] = useState<ProviderValues>({ provider: "landingai", api_key: storedKey("landingai"), model: "dpt-2-latest", base_url: "" });
   const [multiRecord, setMultiRecord] = useState(false);
   const [smartRetry, setSmartRetry] = useState(false);
