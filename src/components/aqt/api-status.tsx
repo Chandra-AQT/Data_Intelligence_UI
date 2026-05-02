@@ -7,8 +7,9 @@ export function ApiStatusBar() {
     const [status, setStatus] = useState<Status>("checking");
 
     const check = async () => {
+        const backendUrl = (typeof import.meta !== "undefined" && (import.meta as { env?: { VITE_API_URL?: string } }).env?.VITE_API_URL?.replace("/api/v1", "")) || "http://127.0.0.1:8000";
         try {
-            const res = await fetch("http://127.0.0.1:8000/health", { signal: AbortSignal.timeout(4000) });
+            const res = await fetch(`${backendUrl}/health`, { signal: AbortSignal.timeout(4000) });
             setStatus(res.ok ? "online" : "offline");
         } catch {
             setStatus("offline");

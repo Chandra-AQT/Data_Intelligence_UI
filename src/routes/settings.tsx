@@ -235,7 +235,7 @@ function Settings() {
                 <p className="text-xs font-bold uppercase tracking-wide mb-3" style={{ color: "rgba(255,255,255,0.4)" }}>Documentation</p>
                 <div className="flex flex-wrap gap-3">
                   <a
-                    href="http://127.0.0.1:8000/docs"
+                    href={`${(import.meta as { env?: { VITE_API_URL?: string } }).env?.VITE_API_URL?.replace("/api/v1", "") ?? "http://127.0.0.1:8000"}/docs`}
                     target="_blank"
                     rel="noopener noreferrer"
                     className="flex items-center gap-2 rounded-xl px-4 py-2.5 text-sm font-bold transition-all hover:-translate-y-0.5"
