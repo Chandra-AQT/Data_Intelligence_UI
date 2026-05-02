@@ -18,6 +18,71 @@ import { api, downloadBlob, storedKey } from "@/lib/aqt";
 
 export const Route = createFileRoute("/extract")({ component: ExtractionWizard });
 
+// ── Parsed Content Viewer Modal ───────────────────────────────────────────────
+function ParsedViewer({ docId, fileName, onClose }: { docId: string; fileName: string; onClose: () => void }) {
+  const { data, isLoading, error } = useQuery({
+    queryKey: ["doc-parsed-extract", docId],
+    queryFn: () => api.get(`/documents/${docId}/parsed`).then(r => r.data),
+  });
+
+  const chunks = (data as { chunks?: Array<{ id: string; type: string; markdown: string }> })?.chunks ?? [];
+  const tables = (data as { tables?: unknown[] })?.tables ?? [];
+  const markdown = (data as { markdown?: string })?.markdown ?? "";
+
+  return (
+    <div className="fixed inset-0 z-[80] flex items-center justify-center" style={{ backgroundColor: "rgba(0,0,0,0.75)", backdropFilter: "blur(8px)" }}>
+      <div className="w-full max-w-3xl mx-4 rounded-2xl overflow-hidden flex flex-col" style={{ backgroundColor: "#0d1526", border: "1px solid rgba(255,255,255,0.1)", boxShadow: "0 32px 80px rgba(0,0,0,0.8)", maxHeight: "80vh" }}>
+        {/* Header */}
+        <div className="flex items-center justify-between px-5 py-4 shrink-0" style={{ backgroundColor: "#060b14", borderBottom: "1px solid rgba(255,255,255,0.08)" }}>
+          <div>
+            <p className="text-sm font-black text-white truncate max-w-[400px]">{fileName}</p>
+            <p className="text-xs mt-0.5" style={{ color: "rgba(255,255,255,0.35)" }}>
+              {chunks.length} chunks · {tables.length} tables · {markdown.length} chars
+            </p>
+          </div>
+          <button onClick={onClose} className="p-2 rounded-xl hover:bg-white/10 transition-colors">
+            <X className="h-4 w-4" style={{ color: "rgba(255,255,255,0.5)" }} />
+          </button>
+        </div>
+        {/* Content */}
+        <div className="flex-1 overflow-y-auto p-5 space-y-3">
+          {isLoading && (
+            <div className="flex items-center justify-center py-16">
+              <Loader2 className="h-8 w-8 animate-spin" style={{ color: "#3b82f6" }} />
+            </div>
+          )}
+          {error && (
+            <div className="py-8 text-center">
+              <AlertCircle className="mx-auto h-8 w-8 mb-2" style={{ color: "#ef4444" }} />
+              <p className="text-sm" style={{ color: "#ef4444" }}>Failed to load parsed content</p>
+            </div>
+          )}
+          {!isLoading && !error && chunks.length === 0 && markdown && (
+            <pre className="text-xs font-mono leading-relaxed whitespace-pre-wrap" style={{ color: "rgba(255,255,255,0.7)" }}>
+              {markdown.slice(0, 8000)}
+            </pre>
+          )}
+          {!isLoading && !error && chunks.map((chunk, i) => (
+            <div key={chunk.id ?? i}>
+              <div className="flex items-center gap-2 mb-1.5">
+                <span className="text-[10px] font-bold uppercase tracking-wide px-2 py-0.5 rounded-md"
+                  style={{ backgroundColor: chunk.type === "table" ? "rgba(34,197,94,0.15)" : "rgba(37,99,235,0.15)", color: chunk.type === "table" ? "#22c55e" : "#60a5fa" }}>
+                  {chunk.type}
+                </span>
+                <span className="text-[10px]" style={{ color: "rgba(255,255,255,0.2)" }}>#{i + 1}</span>
+              </div>
+              <div className="rounded-lg px-3 py-2.5 font-mono text-xs leading-relaxed whitespace-pre-wrap"
+                style={{ backgroundColor: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.06)", color: "rgba(255,255,255,0.65)" }}>
+                {chunk.markdown.replace(/<[^>]+>/g, "").replace(/&[^;]+;/g, " ").trim().slice(0, 500)}
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 const CARD = { backgroundColor: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.08)" } as const;
 const INPUT = { backgroundColor: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.1)", color: "#f8fafc" } as const;
 
@@ -81,6 +146,7 @@ function Step1Upload({
   onNext: () => void;
 }) {
   const qc = useQueryClient();
+  const [viewingDoc, setViewingDoc] = useState<{ id: string; file_name: string } | null>(null);
   const { data: docsData, isLoading } = useQuery({
     queryKey: ["documents"],
     queryFn: () => api.get("/documents").then(r => r.data.documents ?? []),
@@ -301,10 +367,7 @@ function Step1Upload({
                       {/* Eye icon — view parsed content */}
                       {isParsed && (
                         <button
-                          onClick={() => {
-                            const backendUrl = (import.meta as { env?: { VITE_API_URL?: string } }).env?.VITE_API_URL?.replace("/api/v1", "") ?? "https://ai-data-intelligence-1.onrender.com";
-                            window.open(`${backendUrl}/api/v1/documents/${doc.id}/parsed`, "_blank");
-                          }}
+                          onClick={() => setViewingDoc({ id: doc.id, file_name: doc.file_name })}
                           className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg transition-all hover:bg-white/10 hover:scale-110"
                           style={{ color: "rgba(255,255,255,0.4)" }}
                           title="View parsed content"
@@ -341,6 +404,15 @@ function Step1Upload({
           Next: Schema <ChevronRight className="h-4 w-4" />
         </button>
       </div>
+
+      {/* Parsed content viewer modal */}
+      {viewingDoc && (
+        <ParsedViewer
+          docId={viewingDoc.id}
+          fileName={viewingDoc.file_name}
+          onClose={() => setViewingDoc(null)}
+        />
+      )}
     </div>
   );
 }
