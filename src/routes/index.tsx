@@ -446,29 +446,22 @@ function Index() {
             <a href="#engines" className="hover:text-white transition-colors">Engines</a>
           </div>
           <div className="flex items-center gap-3">
-            {/* API status indicator */}
-            <div className="hidden sm:flex items-center gap-1.5 px-2.5 py-1 rounded-full"
-              style={{ backgroundColor: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.1)" }}>
-              <span className="relative flex h-2 w-2">
-                {apiOnline === null ? (
-                  <span className="h-2 w-2 rounded-full bg-yellow-400 opacity-60" />
-                ) : apiOnline ? (
-                  <>
-                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75" />
-                    <span className="relative inline-flex h-2 w-2 rounded-full bg-green-400" />
-                  </>
-                ) : (
-                  <>
-                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-500 opacity-75" />
-                    <span className="relative inline-flex h-2 w-2 rounded-full bg-red-500" />
-                  </>
-                )}
-              </span>
-              <span className="text-[10px] font-bold"
-                style={{ color: apiOnline === null ? "#facc15" : apiOnline ? "#4ade80" : "#f87171" }}>
-                {apiOnline === null ? "Checking…" : apiOnline ? "API Online" : "API Offline"}
-              </span>
-            </div>
+            {/* API status indicator — dot only */}
+            <span className="relative flex h-2.5 w-2.5" title={apiOnline === null ? "Checking API…" : apiOnline ? "API Online" : "API Offline"}>
+              {apiOnline === null ? (
+                <span className="h-2.5 w-2.5 rounded-full bg-yellow-400 opacity-60" />
+              ) : apiOnline ? (
+                <>
+                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75" />
+                  <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-green-400" />
+                </>
+              ) : (
+                <>
+                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-500 opacity-75" />
+                  <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-red-500" />
+                </>
+              )}
+            </span>
             {loggedIn ? (
               <>
                 <Link to="/dashboard" className="text-sm font-semibold text-white/80 hover:text-white transition-colors px-4 py-2">Dashboard</Link>
