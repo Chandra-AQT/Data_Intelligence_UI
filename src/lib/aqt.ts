@@ -1,9 +1,9 @@
 import axios from "axios";
 
-// Use environment variable in production, fallback to localhost for dev
+// Production backend URL
 export const API_BASE_URL = (
   typeof import.meta !== "undefined" && (import.meta as { env?: { VITE_API_URL?: string } }).env?.VITE_API_URL
-) || "http://127.0.0.1:8000/api/v1";
+) || "https://ai-data-intelligence-1.onrender.com/api/v1";
 
 export type ProviderKey = "landingai" | "openai" | "chatgpt" | "anthropic" | "gemini" | "groq" | "grok" | "perplexity" | "emergence" | "ollama" | "python" | "none";
 
