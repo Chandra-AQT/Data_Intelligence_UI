@@ -1,6 +1,6 @@
 import { useEffect, useMemo } from "react";
 import { KeyRound, Link2, Cpu } from "lucide-react";
-import { providers, saveStoredKey, storedKey, type ProviderKey } from "@/lib/aqt";
+import { providers, saveStoredKey, storedKey, saveStoredBaseUrl, storedBaseUrl, type ProviderKey } from "@/lib/aqt";
 
 export interface ProviderValues {
   provider: ProviderKey;
@@ -26,11 +26,20 @@ export function ProviderConfig({ compact = false, value, onChange }: ProviderCon
   const vals = value ?? DEFAULT;
   const selected = useMemo(() => providers.find((p) => p.key === vals.provider) ?? providers[0], [vals.provider]);
 
-  // Pre-fill stored key when provider changes
+  // Pre-fill stored key AND base URL when provider changes
   useEffect(() => {
-    const stored = storedKey(vals.provider);
-    if (stored && stored !== vals.api_key) {
-      onChange?.({ ...vals, api_key: stored, model: selected.model });
+    const storedApiKey = storedKey(vals.provider);
+    const storedUrl = storedBaseUrl(vals.provider);
+    const needsUpdate =
+      (storedApiKey && storedApiKey !== vals.api_key) ||
+      (storedUrl && storedUrl !== vals.base_url);
+    if (needsUpdate) {
+      onChange?.({
+        ...vals,
+        api_key: storedApiKey || vals.api_key,
+        base_url: storedUrl || vals.base_url,
+        model: selected.model,
+      });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [vals.provider]);
@@ -46,7 +55,12 @@ export function ProviderConfig({ compact = false, value, onChange }: ProviderCon
           onChange={(e) => {
             const p = e.target.value as ProviderKey;
             const def = providers.find((x) => x.key === p);
-            set({ provider: p, model: def?.model ?? "", api_key: storedKey(p) });
+            set({
+              provider: p,
+              model: def?.model ?? "",
+              api_key: storedKey(p),
+              base_url: storedBaseUrl(p),
+            });
           }}
           className="h-10 rounded-lg border border-input bg-card px-3 text-sm text-foreground focus-visible:ring-2 focus-visible:ring-ring"
         >
@@ -82,8 +96,15 @@ export function ProviderConfig({ compact = false, value, onChange }: ProviderCon
           <span className="inline-flex items-center gap-2"><Link2 className="h-4 w-4 text-primary" />Base URL</span>
           <input
             value={vals.base_url}
-            onChange={(e) => set({ base_url: e.target.value })}
-            placeholder={vals.provider === "landingai" ? "https://va.eu-west-1.landing.ai/" : vals.provider === "ollama" ? "http://localhost:11434" : "Provider endpoint"}
+            onChange={(e) => {
+              set({ base_url: e.target.value });
+              saveStoredBaseUrl(vals.provider, e.target.value);
+            }}
+            placeholder={
+              vals.provider === "landingai" ? "https://va.eu-west-1.landing.ai/" :
+                vals.provider === "ollama" ? "http://localhost:11434" :
+                  "Provider endpoint"
+            }
             className="h-10 rounded-lg border border-input bg-card px-3 text-sm placeholder:text-muted-foreground focus-visible:ring-2 focus-visible:ring-ring"
           />
         </label>
@@ -91,7 +112,7 @@ export function ProviderConfig({ compact = false, value, onChange }: ProviderCon
 
       {!compact && (
         <p className="rounded-xl border border-panel-border bg-primary/5 p-3 text-xs text-muted-foreground">
-          API keys are stored locally in your browser and never saved on the server.
+          API keys and Base URLs are stored locally in your browser and never saved on the server.
         </p>
       )}
     </div>

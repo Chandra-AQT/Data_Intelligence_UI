@@ -3,7 +3,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useMutation } from "@tanstack/react-query";
 import toast from "react-hot-toast";
 import { User, Shield, Key, Info, Eye, EyeOff, Loader2 } from "lucide-react";
-import { API_BASE_URL, engineBadges, getUser, saveAuth, saveStoredKey, storedKey, api } from "@/lib/aqt";
+import { API_BASE_URL, engineBadges, getUser, saveAuth, saveStoredKey, storedKey, saveStoredBaseUrl, storedBaseUrl, api } from "@/lib/aqt";
 import { AppShell } from "@/components/aqt/app-shell";
 import { Button } from "@/components/ui/button";
 
@@ -13,51 +13,74 @@ const CARD = { backgroundColor: "rgba(255,255,255,0.04)", border: "1px solid rgb
 const INPUT = { backgroundColor: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.1)", color: "#f8fafc" } as const;
 
 const PROVIDER_KEYS = [
-  { key: "openai", label: "OpenAI", placeholder: "sk-..." },
-  { key: "landingai", label: "Landing AI", placeholder: "land_sk_..." },
-  { key: "anthropic", label: "Anthropic", placeholder: "sk-ant-..." },
-  { key: "groq", label: "Groq", placeholder: "gsk_..." },
-  { key: "gemini", label: "Google Gemini", placeholder: "AIza..." },
-  { key: "grok", label: "xAI Grok", placeholder: "xai-..." },
-  { key: "perplexity", label: "Perplexity AI", placeholder: "pplx-..." },
-  { key: "emergence", label: "Emergence AI", placeholder: "em-..." },
+  { key: "openai", label: "OpenAI", placeholder: "sk-...", hasBaseUrl: false },
+  { key: "landingai", label: "Landing AI", placeholder: "land_sk_...", hasBaseUrl: true, baseUrlPlaceholder: "https://va.eu-west-1.landing.ai/" },
+  { key: "anthropic", label: "Anthropic", placeholder: "sk-ant-...", hasBaseUrl: false },
+  { key: "groq", label: "Groq", placeholder: "gsk_...", hasBaseUrl: false },
+  { key: "gemini", label: "Google Gemini", placeholder: "AIza...", hasBaseUrl: false },
+  { key: "grok", label: "xAI Grok", placeholder: "xai-...", hasBaseUrl: true, baseUrlPlaceholder: "https://api.x.ai/v1" },
+  { key: "perplexity", label: "Perplexity AI", placeholder: "pplx-...", hasBaseUrl: false },
+  { key: "emergence", label: "Emergence AI", placeholder: "em-...", hasBaseUrl: true, baseUrlPlaceholder: "https://api.emergence.ai/v1" },
+  { key: "ollama", label: "Ollama (Local)", placeholder: "no key needed", hasBaseUrl: true, baseUrlPlaceholder: "http://localhost:11434" },
 ];
 
-function ApiKeyRow({ providerKey, label, placeholder }: { providerKey: string; label: string; placeholder: string }) {
+function ApiKeyRow({ providerKey, label, placeholder, hasBaseUrl, baseUrlPlaceholder }: {
+  providerKey: string; label: string; placeholder: string;
+  hasBaseUrl?: boolean; baseUrlPlaceholder?: string;
+}) {
   const [value, setValue] = useState(storedKey(providerKey));
+  const [baseUrl, setBaseUrl] = useState(storedBaseUrl(providerKey));
   const [show, setShow] = useState(false);
 
   const save = () => {
     saveStoredKey(providerKey, value);
-    toast.success(`${label} key saved`);
+    if (hasBaseUrl) saveStoredBaseUrl(providerKey, baseUrl);
+    toast.success(`${label} settings saved`);
   };
   const clear = () => {
     setValue("");
+    setBaseUrl("");
     saveStoredKey(providerKey, "");
-    toast.success(`${label} key cleared`);
+    if (hasBaseUrl) saveStoredBaseUrl(providerKey, "");
+    toast.success(`${label} settings cleared`);
   };
 
   return (
-    <div className="flex flex-wrap items-center gap-3 rounded-xl p-4" style={{ backgroundColor: "rgba(255,255,255,0.02)", border: "1px solid rgba(255,255,255,0.06)" }}>
-      <span className="w-32 text-sm font-bold text-white shrink-0">{label}</span>
-      <div className="relative flex-1 min-w-[200px]">
-        <input
-          type={show ? "text" : "password"}
-          value={value}
-          onChange={(e) => setValue(e.target.value)}
-          placeholder={placeholder}
-          className="w-full h-9 rounded-lg px-3 pr-9 text-sm font-mono"
-          style={INPUT}
-        />
-        <button
-          onClick={() => setShow((s) => !s)}
-          className="absolute right-2 top-1/2 -translate-y-1/2"
-          style={{ color: "rgba(255,255,255,0.3)" }}
-        >
-          {show ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-        </button>
+    <div className="rounded-xl p-4 space-y-3" style={{ backgroundColor: "rgba(255,255,255,0.02)", border: "1px solid rgba(255,255,255,0.06)" }}>
+      <p className="text-sm font-bold text-white">{label}</p>
+      {/* API Key */}
+      <div className="flex flex-wrap items-center gap-3">
+        <span className="w-20 text-xs font-semibold shrink-0" style={{ color: "rgba(255,255,255,0.4)" }}>API Key</span>
+        <div className="relative flex-1 min-w-[200px]">
+          <input
+            type={show ? "text" : "password"}
+            value={value}
+            onChange={(e) => setValue(e.target.value)}
+            placeholder={placeholder}
+            className="w-full h-9 rounded-lg px-3 pr-9 text-sm font-mono"
+            style={INPUT}
+          />
+          <button onClick={() => setShow((s) => !s)} className="absolute right-2 top-1/2 -translate-y-1/2" style={{ color: "rgba(255,255,255,0.3)" }}>
+            {show ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+          </button>
+        </div>
       </div>
-      <div className="flex gap-2 shrink-0">
+      {/* Base URL */}
+      {hasBaseUrl && (
+        <div className="flex flex-wrap items-center gap-3">
+          <span className="w-20 text-xs font-semibold shrink-0" style={{ color: "rgba(255,255,255,0.4)" }}>Base URL</span>
+          <input
+            type="text"
+            value={baseUrl}
+            onChange={(e) => setBaseUrl(e.target.value)}
+            placeholder={baseUrlPlaceholder ?? "https://..."}
+            className="flex-1 min-w-[200px] h-9 rounded-lg px-3 text-sm font-mono"
+            style={INPUT}
+          />
+        </div>
+      )}
+      {/* Actions */}
+      <div className="flex gap-2 justify-end">
         <Button size="sm" onClick={save} style={{ background: "linear-gradient(135deg, #2563eb, #7c3aed)", border: "none" }} className="font-black text-white">
           Save
         </Button>
@@ -210,7 +233,7 @@ function Settings() {
               </div>
               <div className="space-y-2">
                 {PROVIDER_KEYS.map((p) => (
-                  <ApiKeyRow key={p.key} providerKey={p.key} label={p.label} placeholder={p.placeholder} />
+                  <ApiKeyRow key={p.key} providerKey={p.key} label={p.label} placeholder={p.placeholder} hasBaseUrl={p.hasBaseUrl} baseUrlPlaceholder={p.baseUrlPlaceholder} />
                 ))}
               </div>
             </div>

@@ -103,6 +103,21 @@ export function saveStoredKey(provider: string, value: string) {
   }
 }
 
+export function storedBaseUrl(provider: string) {
+  if (typeof window === "undefined") return "";
+  const user = getUser();
+  const userId = (user as { id?: string } | null)?.id ?? "guest";
+  return window.localStorage.getItem(`aqt_${userId}_${provider}_base_url`) ?? "";
+}
+
+export function saveStoredBaseUrl(provider: string, value: string) {
+  if (typeof window !== "undefined") {
+    const user = getUser();
+    const userId = (user as { id?: string } | null)?.id ?? "guest";
+    window.localStorage.setItem(`aqt_${userId}_${provider}_base_url`, value);
+  }
+}
+
 export function gradeFor(score = 0) {
   if (score >= 90) return "A";
   if (score >= 75) return "B";
