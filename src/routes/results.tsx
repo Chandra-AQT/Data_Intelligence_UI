@@ -347,7 +347,8 @@ function Results() {
 
     const allJobs: Job[] = jobsData ?? [];
     const allBatches: Batch[] = batchesData ?? [];
-    const singleJobs = allJobs.filter(j => !j.batch_id);
+    // Single tab shows ALL individual jobs (standalone + inside batches)
+    const singleJobs = allJobs;
 
     const tabs = [
         { id: "single" as const, label: "Single Extraction", icon: FileText, count: singleJobs.length },
