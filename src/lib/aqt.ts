@@ -90,11 +90,17 @@ export function clearAuth() {
 
 export function storedKey(provider: string) {
   if (typeof window === "undefined") return "";
-  return window.localStorage.getItem(`aqt_${provider}_key`) ?? "";
+  const user = getUser();
+  const userId = (user as { id?: string } | null)?.id ?? "guest";
+  return window.localStorage.getItem(`aqt_${userId}_${provider}_key`) ?? "";
 }
 
 export function saveStoredKey(provider: string, value: string) {
-  if (typeof window !== "undefined") window.localStorage.setItem(`aqt_${provider}_key`, value);
+  if (typeof window !== "undefined") {
+    const user = getUser();
+    const userId = (user as { id?: string } | null)?.id ?? "guest";
+    window.localStorage.setItem(`aqt_${userId}_${provider}_key`, value);
+  }
 }
 
 export function gradeFor(score = 0) {
