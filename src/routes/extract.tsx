@@ -697,14 +697,14 @@ function Step3Engine({ provider, setProvider, multiRecord, setMultiRecord, visio
           <Toggle
             val={visionParse}
             set={setVisionParse}
-            label="🔍 Vision Parse"
+            label="🤖 AI Parse"
             desc="Use AI vision to read dimensions from diagrams and images — extracts data that text parsers miss"
             warn="Uses additional API credits per page"
           />
         ) : (
           <div className="flex items-center gap-3 rounded-xl px-4 py-3" style={{ border: "1px solid rgba(255,255,255,0.06)", opacity: 0.4 }}>
             <div className="flex-1">
-              <p className="text-sm font-bold text-white">🔍 Vision Parse</p>
+              <p className="text-sm font-bold text-white">🤖 AI Parse</p>
               <p className="text-xs mt-0.5" style={{ color: "rgba(255,255,255,0.35)" }}>Not available for {provider.provider} — use LandingAI, GPT-4o, Claude, or Gemini</p>
             </div>
           </div>
