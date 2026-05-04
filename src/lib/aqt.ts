@@ -12,7 +12,7 @@ export const providers: Array<{ key: ProviderKey; label: string; model: string; 
   { key: "openai", label: "OpenAI GPT-4o", model: "gpt-4o-mini", needsKey: true },
   { key: "chatgpt", label: "ChatGPT", model: "gpt-4o-mini", needsKey: true },
   { key: "anthropic", label: "Anthropic Claude", model: "claude-3-5-haiku-20241022", needsKey: true },
-  { key: "gemini", label: "Google Gemini", model: "gemini-1.5-flash", needsKey: true },
+  { key: "gemini", label: "Google Gemini", model: "gemini-2.0-flash", needsKey: true },
   { key: "groq", label: "Groq", model: "llama-3.1-8b-instant", needsKey: true },
   { key: "grok", label: "xAI Grok", model: "grok-beta", needsKey: true, needsBaseUrl: true },
   { key: "emergence", label: "Emergence AI", model: "em-llm-001", needsKey: true, needsBaseUrl: true },
