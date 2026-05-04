@@ -79,7 +79,13 @@ export function saveAuth(data: { access_token: string; refresh_token: string; us
 
 export function clearAuth() {
   if (typeof window === "undefined") return;
-  ["aqt_access_token", "aqt_refresh_token", "aqt_user"].forEach((key) => window.localStorage.removeItem(key));
+  // Clear auth tokens, user data, AND all stored API keys on logout
+  const keysToRemove: string[] = [];
+  for (let i = 0; i < window.localStorage.length; i++) {
+    const key = window.localStorage.key(i);
+    if (key && key.startsWith("aqt_")) keysToRemove.push(key);
+  }
+  keysToRemove.forEach((key) => window.localStorage.removeItem(key));
 }
 
 export function storedKey(provider: string) {
