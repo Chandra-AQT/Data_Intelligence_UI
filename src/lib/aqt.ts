@@ -3,7 +3,7 @@ import axios from "axios";
 // Production backend URL — reads VITE_API_BASE env var set in Vercel
 export const API_BASE_URL = (
   typeof import.meta !== "undefined" && (import.meta as { env?: { VITE_API_BASE?: string } }).env?.VITE_API_BASE
-) || "https://dataintelligence-production.up.railway.app/api/v1";
+) || "http://127.0.0.1:8000/api/v1";
 
 export type ProviderKey = "landingai" | "openai" | "chatgpt" | "anthropic" | "gemini" | "groq" | "grok" | "perplexity" | "emergence" | "ollama" | "python" | "none";
 

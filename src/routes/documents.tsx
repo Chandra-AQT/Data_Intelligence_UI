@@ -114,7 +114,7 @@ function DocViewerPanel({ doc, onClose, allJobs }: { doc: DocMeta; onClose: () =
   const isImage = /\.(png|jpg|jpeg|webp|gif|bmp|tiff|heic)$/i.test(doc.file_name);
   // file_path is like "./uploads/uuid.pdf" or "uploads/uuid.pdf" — extract just the filename
   const fileBasename = doc.file_path ? doc.file_path.replace(/\\/g, "/").split("/").pop() : null;
-  const BACKEND = (import.meta as { env?: { VITE_API_BASE?: string } }).env?.VITE_API_BASE?.replace(/\/api\/v1\/?$/, "") ?? "https://dataintelligence-production.up.railway.app";
+  const BACKEND = (import.meta as { env?: { VITE_API_BASE?: string } }).env?.VITE_API_BASE?.replace(/\/api\/v1\/?$/, "") ?? "http://127.0.0.1:8000";
   const fileUrl = fileBasename ? `${BACKEND}/uploads/${fileBasename}` : null;
 
   const handleExport = async (jobId: string, type: "excel" | "csv") => {

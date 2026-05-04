@@ -361,7 +361,7 @@ function Index() {
   // Ping backend health every 30s
   useEffect(() => {
     const BASE = (import.meta as { env?: { VITE_API_BASE?: string } }).env?.VITE_API_BASE
-      ?? "https://dataintelligence-production.up.railway.app/api/v1";
+      ?? "http://127.0.0.1:8000/api/v1";
     const healthUrl = BASE.replace(/\/api\/v1\/?$/, "") + "/health";
     const check = async () => {
       try {

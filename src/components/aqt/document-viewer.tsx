@@ -49,13 +49,13 @@ export function DocumentViewer({ documentId, fileName, filePath, parsedData, pag
                 <div className="flex-1 overflow-auto bg-gray-100 p-4 flex items-start justify-center">
                     {isPdf && filePath ? (
                         <iframe
-                            src={`${(import.meta as { env?: { VITE_API_BASE?: string } }).env?.VITE_API_BASE?.replace(/\/api\/v1\/?$/, "") ?? "https://dataintelligence-production.up.railway.app"}/uploads/${filePath.split('/').pop()}#page=${currentPage}`}
+                            src={`${(import.meta as { env?: { VITE_API_BASE?: string } }).env?.VITE_API_BASE?.replace(/\/api\/v1\/?$/, "") ?? "http://127.0.0.1:8000"}/uploads/${filePath.split('/').pop()}#page=${currentPage}`}
                             className="w-full h-full min-h-[500px] rounded border border-border bg-white shadow"
                             title={fileName}
                         />
                     ) : isImage && filePath ? (
                         <img
-                            src={`${(import.meta as { env?: { VITE_API_BASE?: string } }).env?.VITE_API_BASE?.replace(/\/api\/v1\/?$/, "") ?? "https://dataintelligence-production.up.railway.app"}/uploads/${filePath.split('/').pop()}`}
+                            src={`${(import.meta as { env?: { VITE_API_BASE?: string } }).env?.VITE_API_BASE?.replace(/\/api\/v1\/?$/, "") ?? "http://127.0.0.1:8000"}/uploads/${filePath.split('/').pop()}`}
                             alt={fileName}
                             className="max-w-full rounded border border-border shadow"
                         />

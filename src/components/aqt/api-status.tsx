@@ -6,7 +6,7 @@ type Status = "checking" | "online" | "offline";
 const BACKEND_URL = (
     typeof import.meta !== "undefined" &&
     (import.meta as { env?: { VITE_API_BASE?: string } }).env?.VITE_API_BASE?.replace(/\/api\/v1\/?$/, "")
-) || "https://dataintelligence-production.up.railway.app";
+) || "http://127.0.0.1:8000";
 
 export function ApiStatusBar() {
     const [status, setStatus] = useState<Status>("checking");
