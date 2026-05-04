@@ -660,17 +660,24 @@ function Step2Schema({ schemaId, setSchemaId, onNext, onBack }: {
 }
 
 //  Step 3: Engine 
-function Step3Engine({ provider, setProvider, multiRecord, setMultiRecord, smartRetry, setSmartRetry, retryThreshold, setRetryThreshold, onNext, onBack }: {
+function Step3Engine({ provider, setProvider, multiRecord, setMultiRecord, visionParse, setVisionParse, smartRetry, setSmartRetry, retryThreshold, setRetryThreshold, onNext, onBack }: {
   provider: ProviderValues; setProvider: (v: ProviderValues) => void;
   multiRecord: boolean; setMultiRecord: (v: boolean) => void;
+  visionParse: boolean; setVisionParse: (v: boolean) => void;
   smartRetry: boolean; setSmartRetry: (v: boolean) => void;
   retryThreshold: number; setRetryThreshold: (v: number) => void;
   onNext: () => void; onBack: () => void;
 }) {
-  const Toggle = ({ val, set, label, desc }: { val: boolean; set: (v: boolean) => void; label: string; desc: string }) => (
-    <label className="flex items-center justify-between rounded-xl px-4 py-3 cursor-pointer transition-colors hover:bg-white/[0.02]" style={{ border: "1px solid rgba(255,255,255,0.06)" }}>
-      <div><p className="text-sm font-bold text-white">{label}</p><p className="text-xs mt-0.5" style={{ color: "rgba(255,255,255,0.35)" }}>{desc}</p></div>
-      <div onClick={() => set(!val)} className="relative h-6 w-11 rounded-full transition-all cursor-pointer shrink-0" style={{ backgroundColor: val ? "#2563eb" : "rgba(255,255,255,0.1)" }}>
+  const visionSupported = ["landingai", "openai", "chatgpt", "anthropic", "gemini"].includes(provider.provider);
+
+  const Toggle = ({ val, set, label, desc, warn }: { val: boolean; set: (v: boolean) => void; label: string; desc: string; warn?: string }) => (
+    <label className="flex items-start justify-between rounded-xl px-4 py-3 cursor-pointer transition-colors hover:bg-white/[0.02]" style={{ border: "1px solid rgba(255,255,255,0.06)" }}>
+      <div className="flex-1 min-w-0 pr-4">
+        <p className="text-sm font-bold text-white">{label}</p>
+        <p className="text-xs mt-0.5" style={{ color: "rgba(255,255,255,0.35)" }}>{desc}</p>
+        {warn && val && <p className="text-xs mt-1 font-semibold" style={{ color: "#f59e0b" }}>⚠ {warn}</p>}
+      </div>
+      <div onClick={() => set(!val)} className="relative h-6 w-11 rounded-full transition-all cursor-pointer shrink-0 mt-0.5" style={{ backgroundColor: val ? "#2563eb" : "rgba(255,255,255,0.1)" }}>
         <div className="absolute top-0.5 h-5 w-5 rounded-full bg-white shadow transition-all" style={{ left: val ? "calc(100% - 22px)" : "2px" }} />
       </div>
     </label>
@@ -684,6 +691,25 @@ function Step3Engine({ provider, setProvider, multiRecord, setMultiRecord, smart
       <div className="rounded-2xl p-5 space-y-3" style={CARD}>
         <p className="text-xs font-bold uppercase tracking-widest" style={{ color: "#22d3ee" }}> OPTIONS</p>
         <Toggle val={multiRecord} set={setMultiRecord} label="Multi-record mode" desc="Extract all model variants from one PDF simultaneously" />
+
+        {/* Vision Parse toggle — only show for vision-capable providers */}
+        {visionSupported ? (
+          <Toggle
+            val={visionParse}
+            set={setVisionParse}
+            label="🔍 Vision Parse"
+            desc="Use AI vision to read dimensions from diagrams and images — extracts data that text parsers miss"
+            warn="Uses additional API credits per page"
+          />
+        ) : (
+          <div className="flex items-center gap-3 rounded-xl px-4 py-3" style={{ border: "1px solid rgba(255,255,255,0.06)", opacity: 0.4 }}>
+            <div className="flex-1">
+              <p className="text-sm font-bold text-white">🔍 Vision Parse</p>
+              <p className="text-xs mt-0.5" style={{ color: "rgba(255,255,255,0.35)" }}>Not available for {provider.provider} — use LandingAI, GPT-4o, Claude, or Gemini</p>
+            </div>
+          </div>
+        )}
+
         <Toggle val={smartRetry} set={setSmartRetry} label="Smart Retry" desc="Re-extract low-confidence fields automatically" />
         {smartRetry && (
           <div className="px-4 pb-2">
@@ -701,9 +727,9 @@ function Step3Engine({ provider, setProvider, multiRecord, setMultiRecord, smart
 }
 
 //  Step 4: Running 
-function Step4Running({ mode, singleDocId, batchDocIds, zipFile, schemaId, provider, multiRecord, onDone, onError }: {
+function Step4Running({ mode, singleDocId, batchDocIds, zipFile, schemaId, provider, multiRecord, visionParse, onDone, onError }: {
   mode: UploadMode; singleDocId: string; batchDocIds: string[]; zipFile: File | null;
-  schemaId: string; provider: ProviderValues; multiRecord: boolean;
+  schemaId: string; provider: ProviderValues; multiRecord: boolean; visionParse: boolean;
   onDone: (result: Record<string, unknown>, jobId: string) => void;
   onError: (msg: string) => void;
 }) {
@@ -737,7 +763,7 @@ function Step4Running({ mode, singleDocId, batchDocIds, zipFile, schemaId, provi
 
   useEffect(() => {
     if (mode === "single") {
-      api.post("/extraction/run", { document_id: singleDocId, schema_id: schemaId, provider_config: provider, options: { multi_record: multiRecord } })
+      api.post("/extraction/run", { document_id: singleDocId, schema_id: schemaId, provider_config: provider, options: { multi_record: multiRecord, vision_parse: visionParse } })
         .then(res => onDone(res.data, res.data.job_id))
         .catch(err => onError(err.response?.data?.detail ?? "Extraction failed"));
     } else if (mode === "batch") {
@@ -753,6 +779,7 @@ function Step4Running({ mode, singleDocId, batchDocIds, zipFile, schemaId, provi
         base_url: provider.base_url,
         model: provider.model,
         multi_record: multiRecord,
+        vision_parse: visionParse,
       })
         .then(res => startPoll(res.data.batch_id))
         .catch(err => onError(err.response?.data?.detail ?? "Batch failed"));
@@ -1073,6 +1100,7 @@ function ExtractionWizard() {
   }, [mode]);
   const [provider, setProvider] = useState<ProviderValues>({ provider: "landingai", api_key: storedKey("landingai"), model: "dpt-2-latest", base_url: "" });
   const [multiRecord, setMultiRecord] = useState(false);
+  const [visionParse, setVisionParse] = useState(false);
   const [smartRetry, setSmartRetry] = useState(false);
   const [retryThreshold, setRetryThreshold] = useState(0.5);
   const [result, setResult] = useState<Record<string, unknown> | null>(null);
@@ -1107,8 +1135,8 @@ function ExtractionWizard() {
         <div className="rounded-2xl p-6" style={CARD}>
           {step === 1 && <Step1Upload mode={mode} setMode={setMode} singleDocId={singleDocId} setSingleDocId={setSingleDocId} batchDocIds={batchDocIds} setBatchDocIds={setBatchDocIds} zipFile={zipFile} setZipFile={setZipFile} onNext={() => setStep(2)} />}
           {step === 2 && <Step2Schema schemaId={schemaId} setSchemaId={setSchemaId} onNext={() => setStep(3)} onBack={() => setStep(1)} />}
-          {step === 3 && <Step3Engine provider={provider} setProvider={setProvider} multiRecord={multiRecord} setMultiRecord={setMultiRecord} smartRetry={smartRetry} setSmartRetry={setSmartRetry} retryThreshold={retryThreshold} setRetryThreshold={setRetryThreshold} onNext={() => { setErrorMsg(null); setStep(4); }} onBack={() => setStep(2)} />}
-          {step === 4 && !errorMsg && <Step4Running key={runKey} mode={mode} singleDocId={singleDocId} batchDocIds={batchDocIds} zipFile={zipFile} schemaId={schemaId} provider={provider} multiRecord={multiRecord} onDone={handleDone} onError={handleError} />}
+          {step === 3 && <Step3Engine provider={provider} setProvider={setProvider} multiRecord={multiRecord} setMultiRecord={setMultiRecord} visionParse={visionParse} setVisionParse={setVisionParse} smartRetry={smartRetry} setSmartRetry={setSmartRetry} retryThreshold={retryThreshold} setRetryThreshold={setRetryThreshold} onNext={() => { setErrorMsg(null); setStep(4); }} onBack={() => setStep(2)} />}
+          {step === 4 && !errorMsg && <Step4Running key={runKey} mode={mode} singleDocId={singleDocId} batchDocIds={batchDocIds} zipFile={zipFile} schemaId={schemaId} provider={provider} multiRecord={multiRecord} visionParse={visionParse} onDone={handleDone} onError={handleError} />}
           {step === 4 && errorMsg && <ErrorState message={errorMsg} onRetry={() => { setErrorMsg(null); setRunKey(k => k + 1); }} onBack={() => { setErrorMsg(null); setStep(3); }} />}
           {step === 5 && result && <Step5Results result={result} jobId={jobId} mode={mode} schemaId={schemaId} provider={provider} onRestart={restart} />}
         </div>
