@@ -312,7 +312,7 @@ export function Chatbot({ jobId, documentId, schemaId }: { jobId?: string; docum
   const [messages, setMessages] = useState<Message[]>([{
     id: "welcome",
     role: "assistant",
-    content: "Hi! I'm your **AQT AI Assistant** 👋\n\nI can answer questions about this platform **without any API key** — just ask!\n\n**Try asking:**\n- What pages are available?\n- How do I extract data from a PDF?\n- What is a schema?\n- Why are some fields null?\n\nFor AI-powered answers about your documents, click ⚙ to add your API key.",
+    content: "Hi! I'm your **AI Assistant** 👋\n\nI can answer **any question** — just like ChatGPT or Gemini!\n\n**Ask me anything:**\n- How does GPT-4 work?\n- Explain machine learning\n- Write me a Python script\n- How do I extract data from a PDF?\n- What is a schema?\n\nFor AI-powered answers, click ⚙ to add your API key.",
     timestamp: new Date(),
   }]);
   const [input, setInput] = useState("");
@@ -362,7 +362,7 @@ export function Chatbot({ jobId, documentId, schemaId }: { jobId?: string; docum
 
     const key = apiKey || storedKey(provider);
     if (!key) {
-      addMsg({ role: "assistant", content: "I can answer platform questions without an API key! Try:\n- \"What pages are available?\"\n- \"How do I extract data?\"\n- \"What is a schema?\"\n\nFor AI-powered answers, click ⚙ to add your API key." });
+      addMsg({ role: "assistant", content: "I can answer platform questions without an API key! Try:\n- \"What pages are available?\"\n- \"How do I extract data?\"\n- \"What is a schema?\"\n\nFor AI-powered answers to **any question**, click ⚙ to add your API key." });
       return;
     }
 
