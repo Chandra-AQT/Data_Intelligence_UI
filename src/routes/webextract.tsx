@@ -61,9 +61,13 @@ function WebExtract() {
     // File upload dropzone
     const onDropFile = useCallback(async (files: File[]) => {
         if (!files[0]) return;
+        if (!schemaId) {
+            toast.error("Please select a schema first (right panel) before uploading a URL file");
+            return;
+        }
         const fd = new FormData();
         fd.append("file", files[0]);
-        fd.append("schema_id", schemaId || "none");
+        fd.append("schema_id", schemaId);
         fd.append("max_depth", String(maxDepth));
         fd.append("max_pages", String(maxPages));
         try {
@@ -206,15 +210,21 @@ function WebExtract() {
                                     </div>
                                 ) : (
                                     <div>
+                                        {!schemaId && (
+                                            <div className="mb-3 rounded-xl p-3 text-xs font-bold flex items-center gap-2"
+                                                style={{ backgroundColor: "rgba(245,158,11,0.1)", border: "1px solid rgba(245,158,11,0.3)", color: "#f59e0b" }}>
+                                                ⚠ Select a schema in the right panel before uploading your URL file
+                                            </div>
+                                        )}
                                         <div {...getRootProps()} className="rounded-2xl p-8 text-center cursor-pointer transition-all"
                                             style={{
-                                                border: isDragActive ? "2px dashed #2563eb" : "2px dashed rgba(255,255,255,0.12)",
-                                                backgroundColor: isDragActive ? "rgba(37,99,235,0.08)" : "rgba(255,255,255,0.02)",
+                                                border: !schemaId ? "2px dashed rgba(245,158,11,0.3)" : isDragActive ? "2px dashed #2563eb" : "2px dashed rgba(255,255,255,0.12)",
+                                                backgroundColor: !schemaId ? "rgba(245,158,11,0.03)" : isDragActive ? "rgba(37,99,235,0.08)" : "rgba(255,255,255,0.02)",
                                             }}>
                                             <input {...getInputProps()} />
-                                            <Upload className="mx-auto h-10 w-10 mb-3" style={{ color: isDragActive ? "#60a5fa" : "rgba(255,255,255,0.3)" }} />
+                                            <Upload className="mx-auto h-10 w-10 mb-3" style={{ color: !schemaId ? "#f59e0b" : isDragActive ? "#60a5fa" : "rgba(255,255,255,0.3)" }} />
                                             <p className="text-base font-black text-white">
-                                                {isDragActive ? "Drop file here" : "Drop your URL file here"}
+                                                {!schemaId ? "Select a schema first →" : isDragActive ? "Drop file here" : "Drop your URL file here"}
                                             </p>
                                             <p className="text-sm mt-1" style={{ color: "rgba(255,255,255,0.35)" }}>
                                                 CSV · TXT · Excel · JSON — one URL per row/value
