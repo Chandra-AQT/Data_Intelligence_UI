@@ -81,6 +81,7 @@ function WebExtract() {
         accept: {
             "text/csv": [".csv"],
             "text/plain": [".txt"],
+            "application/json": [".json"],
             "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": [".xlsx"],
         },
         multiple: false,
@@ -216,11 +217,11 @@ function WebExtract() {
                                                 {isDragActive ? "Drop file here" : "Drop your URL file here"}
                                             </p>
                                             <p className="text-sm mt-1" style={{ color: "rgba(255,255,255,0.35)" }}>
-                                                CSV · TXT · Excel — one URL per row
+                                                CSV · TXT · Excel · JSON — one URL per row/value
                                             </p>
                                         </div>
                                         <div className="mt-3 rounded-xl p-3 text-xs" style={{ backgroundColor: "rgba(37,99,235,0.08)", border: "1px solid rgba(37,99,235,0.2)", color: "#60a5fa" }}>
-                                            💡 File format: one URL per line, or a CSV/Excel with URLs in any column. The system auto-detects them.
+                                            💡 File format: one URL per line, CSV/Excel with URLs in any column, or a JSON file with URLs as values. The system auto-detects them.
                                         </div>
                                     </div>
                                 )}

@@ -502,7 +502,7 @@ const allNavItems = [
   { to: "/webextract", label: "Web Extract", icon: Boxes, color: "#0891b2" },
   { to: "/intelligence", label: "AI Tools", icon: Brain, color: "#7c3aed" },
   { to: "/settings", label: "Settings", icon: Settings, color: "#6b7280" },
-] as const;
+];
 
 // ── Floating circular quick-nav (draggable) ───────────────────────────────────
 export function FloatingNav() {
@@ -700,12 +700,12 @@ const navGroups = [
   {
     label: "Advanced",
     items: [
-      { to: "/webextract", label: "Web Extract", icon: Boxes },
-      { to: "/compare", label: "Compare", icon: GitCompare },
-      { to: "/intelligence", label: "AI Tools", icon: Brain },
+      { to: "/webextract" as string, label: "Web Extract", icon: Boxes },
+      { to: "/compare" as string, label: "Compare", icon: GitCompare },
+      { to: "/intelligence" as string, label: "AI Tools", icon: Brain },
     ],
   },
-] as const;
+];
 
 function SkeletonLine({ w = "w-full", h = "h-4" }: { w?: string; h?: string }) {
   return <div className={`${w} ${h} rounded-lg animate-pulse`} style={{ backgroundColor: "rgba(255,255,255,0.06)" }} />;
