@@ -499,6 +499,7 @@ const allNavItems = [
   { to: "/schemas", label: "Schemas", icon: Layers3, color: "#059669" },
   { to: "/documents", label: "Files", icon: FolderOpen, color: "#2563eb" },
   { to: "/compare", label: "Compare", icon: GitCompare, color: "#e11d48" },
+  { to: "/webextract", label: "Web Extract", icon: Boxes, color: "#0891b2" },
   { to: "/intelligence", label: "AI Tools", icon: Brain, color: "#7c3aed" },
   { to: "/settings", label: "Settings", icon: Settings, color: "#6b7280" },
 ] as const;
@@ -699,6 +700,7 @@ const navGroups = [
   {
     label: "Advanced",
     items: [
+      { to: "/webextract", label: "Web Extract", icon: Boxes },
       { to: "/compare", label: "Compare", icon: GitCompare },
       { to: "/intelligence", label: "AI Tools", icon: Brain },
     ],
