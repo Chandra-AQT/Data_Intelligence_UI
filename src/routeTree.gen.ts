@@ -9,6 +9,7 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
+import { Route as WebextractRouteImport } from './routes/webextract'
 import { Route as SettingsRouteImport } from './routes/settings'
 import { Route as SchemasRouteImport } from './routes/schemas'
 import { Route as ResultsRouteImport } from './routes/results'
@@ -23,6 +24,11 @@ import { Route as CompareRouteImport } from './routes/compare'
 import { Route as BatchRouteImport } from './routes/batch'
 import { Route as IndexRouteImport } from './routes/index'
 
+const WebextractRoute = WebextractRouteImport.update({
+  id: '/webextract',
+  path: '/webextract',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const SettingsRoute = SettingsRouteImport.update({
   id: '/settings',
   path: '/settings',
@@ -103,6 +109,7 @@ export interface FileRoutesByFullPath {
   '/results': typeof ResultsRoute
   '/schemas': typeof SchemasRoute
   '/settings': typeof SettingsRoute
+  '/webextract': typeof WebextractRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -118,6 +125,7 @@ export interface FileRoutesByTo {
   '/results': typeof ResultsRoute
   '/schemas': typeof SchemasRoute
   '/settings': typeof SettingsRoute
+  '/webextract': typeof WebextractRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -134,53 +142,54 @@ export interface FileRoutesById {
   '/results': typeof ResultsRoute
   '/schemas': typeof SchemasRoute
   '/settings': typeof SettingsRoute
+  '/webextract': typeof WebextractRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
-    | '/'
-    | '/batch'
-    | '/compare'
-    | '/dashboard'
-    | '/documents'
-    | '/extract'
-    | '/intelligence'
-    | '/jobs'
-    | '/login'
-    | '/register'
-    | '/results'
-    | '/schemas'
-    | '/settings'
+  | '/'
+  | '/batch'
+  | '/compare'
+  | '/dashboard'
+  | '/documents'
+  | '/extract'
+  | '/intelligence'
+  | '/jobs'
+  | '/login'
+  | '/register'
+  | '/results'
+  | '/schemas'
+  | '/settings'
   fileRoutesByTo: FileRoutesByTo
   to:
-    | '/'
-    | '/batch'
-    | '/compare'
-    | '/dashboard'
-    | '/documents'
-    | '/extract'
-    | '/intelligence'
-    | '/jobs'
-    | '/login'
-    | '/register'
-    | '/results'
-    | '/schemas'
-    | '/settings'
+  | '/'
+  | '/batch'
+  | '/compare'
+  | '/dashboard'
+  | '/documents'
+  | '/extract'
+  | '/intelligence'
+  | '/jobs'
+  | '/login'
+  | '/register'
+  | '/results'
+  | '/schemas'
+  | '/settings'
   id:
-    | '__root__'
-    | '/'
-    | '/batch'
-    | '/compare'
-    | '/dashboard'
-    | '/documents'
-    | '/extract'
-    | '/intelligence'
-    | '/jobs'
-    | '/login'
-    | '/register'
-    | '/results'
-    | '/schemas'
-    | '/settings'
+  | '__root__'
+  | '/'
+  | '/batch'
+  | '/compare'
+  | '/dashboard'
+  | '/documents'
+  | '/extract'
+  | '/intelligence'
+  | '/jobs'
+  | '/login'
+  | '/register'
+  | '/results'
+  | '/schemas'
+  | '/settings'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -197,6 +206,7 @@ export interface RootRouteChildren {
   ResultsRoute: typeof ResultsRoute
   SchemasRoute: typeof SchemasRoute
   SettingsRoute: typeof SettingsRoute
+  WebextractRoute: typeof WebextractRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -309,6 +319,7 @@ const rootRouteChildren: RootRouteChildren = {
   ResultsRoute: ResultsRoute,
   SchemasRoute: SchemasRoute,
   SettingsRoute: SettingsRoute,
+  WebextractRoute: WebextractRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
