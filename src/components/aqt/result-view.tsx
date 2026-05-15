@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { ChevronDown, ChevronUp } from "lucide-react";
+import { ChevronDown, ChevronUp, MapPin, ExternalLink } from "lucide-react";
 import { ConfidenceBadge } from "./badges";
 import { QualityPanel } from "./quality-panel";
 
@@ -7,6 +7,8 @@ interface ResultViewProps {
     result?: Record<string, unknown>;
     confidence?: Record<string, number>;
     sources?: Record<string, string>;
+    evidence?: Record<string, string>;
+    documentId?: string;
     records?: Array<{ result: Record<string, unknown>; confidence: Record<string, number>; schema_fields?: string[] }>;
     schemaFields?: string[];
     score?: number;
@@ -20,11 +22,15 @@ interface ResultViewProps {
     missingFields?: string[];
     suggestions?: string[];
     onSmartRetry?: () => void;
+    onFieldClick?: (fieldName: string, source: string, evidence: string) => void;
 }
 
 export function ResultView({
     result,
     confidence = {},
+    sources = {},
+    evidence = {},
+    documentId,
     records,
     schemaFields = [],
     score = 0,
@@ -38,6 +44,7 @@ export function ResultView({
     missingFields = [],
     suggestions = [],
     onSmartRetry,
+    onFieldClick,
 }: ResultViewProps) {
     const [activeTab, setActiveTab] = useState(0);
 
@@ -58,6 +65,17 @@ export function ResultView({
                         </span>
                     )}
                     {jobId && <span className="font-mono text-xs" style={{ color: "rgba(255,255,255,0.3)" }}>{jobId.slice(0, 12)}...</span>}
+                </div>
+            )}
+
+            {/* Source navigation hint */}
+            {documentId && (
+                <div className="flex items-center gap-2 rounded-lg px-3 py-2"
+                    style={{ backgroundColor: "rgba(37,99,235,0.07)", border: "1px solid rgba(37,99,235,0.18)" }}>
+                    <MapPin className="h-3 w-3 shrink-0" style={{ color: "#60a5fa" }} />
+                    <span className="text-xs" style={{ color: "rgba(255,255,255,0.45)" }}>
+                        Click any field to jump to its source location in the document
+                    </span>
                 </div>
             )}
 
@@ -99,13 +117,23 @@ export function ResultView({
                         result={records[activeTab]?.result ?? {}}
                         confidence={records[activeTab]?.confidence ?? {}}
                         fields={records[activeTab]?.schema_fields ?? fields}
+                        sources={sources}
+                        evidence={evidence}
+                        onFieldClick={onFieldClick}
                     />
                 </div>
             )}
 
             {/* Single record */}
             {!isMultiRecord && result && (
-                <FieldGrid result={result} confidence={confidence} fields={fields} />
+                <FieldGrid
+                    result={result}
+                    confidence={confidence}
+                    fields={fields}
+                    sources={sources}
+                    evidence={evidence}
+                    onFieldClick={onFieldClick}
+                />
             )}
 
             {/* Failure log */}
@@ -126,10 +154,16 @@ function FieldGrid({
     result,
     confidence,
     fields,
+    sources = {},
+    evidence = {},
+    onFieldClick,
 }: {
     result: Record<string, unknown>;
     confidence: Record<string, number>;
     fields: string[];
+    sources?: Record<string, string>;
+    evidence?: Record<string, string>;
+    onFieldClick?: (fieldName: string, source: string, evidence: string) => void;
 }) {
     return (
         <div className="mt-3 grid gap-1.5 sm:grid-cols-2">
@@ -138,17 +172,36 @@ function FieldGrid({
                 const conf = confidence[fname] ?? 0;
                 const isArray = Array.isArray(val);
                 const isNull = val === null || val === undefined;
+                const src = sources[fname] ?? "";
+                const evid = evidence[fname] ?? "";
+                const hasSource = !!src && src !== "fallback";
+                const isAiSource = src.startsWith("ai:");
+                const sourceLabel = isAiSource ? "AI" : src === "table" ? "Table" : src === "kv" ? "KV" : src === "chunk" ? "Chunk" : src === "text" ? "Text" : src;
 
                 return (
                     <div
                         key={fname}
-                        className={`flex items-start justify-between rounded-lg px-3 py-2 transition-colors ${isArray ? "sm:col-span-2" : ""}`}
+                        className={`flex items-start justify-between rounded-lg px-3 py-2 transition-colors ${isArray ? "sm:col-span-2" : ""} ${hasSource && onFieldClick ? "cursor-pointer" : ""}`}
                         style={{ backgroundColor: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.06)" }}
-                        onMouseEnter={e => (e.currentTarget.style.backgroundColor = "rgba(255,255,255,0.06)")}
+                        onMouseEnter={e => (e.currentTarget.style.backgroundColor = hasSource && onFieldClick ? "rgba(37,99,235,0.08)" : "rgba(255,255,255,0.06)")}
                         onMouseLeave={e => (e.currentTarget.style.backgroundColor = "rgba(255,255,255,0.03)")}
+                        onClick={() => hasSource && onFieldClick && onFieldClick(fname, src, evid)}
+                        title={hasSource && onFieldClick ? `Source: ${src}${evid ? ` — ${evid.slice(0, 80)}` : ""}` : undefined}
                     >
                         <div className="min-w-0 flex-1">
-                            <p className="text-xs font-medium" style={{ color: "rgba(255,255,255,0.4)" }}>{fname}</p>
+                            <div className="flex items-center gap-1.5 flex-wrap">
+                                <p className="text-xs font-medium" style={{ color: "rgba(255,255,255,0.4)" }}>{fname}</p>
+                                {hasSource && (
+                                    <span className="flex items-center gap-0.5 text-[10px] font-bold rounded px-1 py-0.5"
+                                        style={{
+                                            backgroundColor: isAiSource ? "rgba(124,58,237,0.15)" : "rgba(37,99,235,0.12)",
+                                            color: isAiSource ? "#a78bfa" : "#60a5fa",
+                                        }}>
+                                        {onFieldClick && <MapPin className="h-2 w-2" />}
+                                        {sourceLabel}
+                                    </span>
+                                )}
+                            </div>
                             <div className="text-sm text-white mt-0.5">
                                 {isNull ? (
                                     <span style={{ color: "rgba(255,255,255,0.2)" }}>—</span>
@@ -160,8 +213,19 @@ function FieldGrid({
                                     <span style={{ color: "rgba(255,255,255,0.9)" }}>{String(val)}</span>
                                 )}
                             </div>
+                            {/* Evidence tooltip on hover */}
+                            {evid && hasSource && onFieldClick && (
+                                <p className="text-[10px] mt-1 truncate" style={{ color: "rgba(255,255,255,0.25)" }}>
+                                    {evid.slice(0, 100)}
+                                </p>
+                            )}
                         </div>
-                        {!isArray && <ConfidenceBadge value={isNull ? null : conf} />}
+                        <div className="flex items-center gap-1 shrink-0 ml-2">
+                            {!isArray && <ConfidenceBadge value={isNull ? null : conf} />}
+                            {hasSource && onFieldClick && (
+                                <ExternalLink className="h-3 w-3 opacity-40 hover:opacity-100 transition-opacity" style={{ color: "#60a5fa" }} />
+                            )}
+                        </div>
                     </div>
                 );
             })}

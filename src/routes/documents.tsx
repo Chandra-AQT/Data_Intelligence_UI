@@ -1,4 +1,4 @@
-import { useCallback, useState, useEffect } from "react";
+import { useCallback, useState, useEffect, useRef } from "react";
 import { createFileRoute, Link, useRouterState } from "@tanstack/react-router";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useDropzone } from "react-dropzone";
@@ -6,7 +6,7 @@ import toast from "react-hot-toast";
 import {
   Brain, Eye, FileUp, Trash2, Zap, RefreshCw, X,
   ChevronLeft, ChevronRight, FileText, ToggleLeft, ToggleRight,
-  Table2, Code2, Loader2, Download, ArrowRight, Search, Filter, AlertTriangle, Copy, Check
+  Table2, Code2, Loader2, Download, ArrowRight, Search, Filter, AlertTriangle, Copy, Check, MapPin
 } from "lucide-react";
 import { AppShell, SkeletonTable, EmptyState } from "@/components/aqt/app-shell";
 import { pushNotification } from "@/components/aqt/app-shell";
@@ -91,10 +91,22 @@ function TableChunk({ chunk }: { chunk: Chunk }) {
   );
 }
 
-function DocViewerPanel({ doc, onClose, allJobs }: { doc: DocMeta; onClose: () => void; allJobs: ExtractionJob[] }) {
+function DocViewerPanel({ doc, onClose, allJobs, highlightField, highlightSource, highlightEvidence }: {
+  doc: DocMeta; onClose: () => void; allJobs: ExtractionJob[];
+  highlightField?: string; highlightSource?: string; highlightEvidence?: string;
+}) {
   const [activeTab, setActiveTab] = useState<"markdown" | "json">("markdown");
   const [currentPage, setCurrentPage] = useState(1);
   const [showConfidence, setShowConfidence] = useState(true);
+  const [selectedChunkId, setSelectedChunkId] = useState<string | null>(null);
+  const [highlightInfo, setHighlightInfo] = useState<{ field: string; source: string; evidence: string } | null>(
+    highlightField ? { field: highlightField, source: highlightSource ?? "", evidence: highlightEvidence ?? "" } : null
+  );
+  const chunkRefs = useCallback((node: HTMLDivElement | null, id: string) => {
+    if (node) chunkRefMap.current[id] = node;
+  }, []);
+  const chunkRefMap = useRef<Record<string, HTMLDivElement>>({});
+  const pdfIframeRef = useRef<HTMLIFrameElement>(null);
 
   const { data: parsedData, isLoading: parsedLoading } = useQuery({
     queryKey: ["doc-parsed", doc.id],
@@ -110,12 +122,74 @@ function DocViewerPanel({ doc, onClose, allJobs }: { doc: DocMeta; onClose: () =
   const pageChunks = chunks.filter((c) => (c.grounding?.page ?? 0) === currentPage - 1);
   const displayChunks = pageChunks.length > 0 ? pageChunks : chunks.slice(0, 40);
 
+  // Auto-select chunk matching the highlight evidence when navigated from extraction results
+  useEffect(() => {
+    if (!highlightInfo || chunks.length === 0) return;
+    const evid = highlightInfo.evidence.toLowerCase();
+    const src = highlightInfo.source;
+
+    // Find the best matching chunk: prefer one whose text contains the evidence snippet
+    let bestChunk: Chunk | null = null;
+
+    if (evid) {
+      // Try to find a chunk whose markdown contains the evidence text
+      for (const chunk of chunks) {
+        const plain = chunk.markdown.replace(/<[^>]+>/g, "").replace(/&[^;]+;/g, " ").toLowerCase();
+        // Use first 80 chars of evidence as search key
+        const key = evid.slice(0, 80).trim();
+        if (key && plain.includes(key)) {
+          bestChunk = chunk;
+          break;
+        }
+      }
+    }
+
+    // Fallback: if source is "table", pick first table chunk; if "kv"/"text"/"chunk", pick first text chunk
+    if (!bestChunk) {
+      if (src === "table") {
+        bestChunk = chunks.find(c => c.type === "table") ?? null;
+      } else {
+        bestChunk = chunks.find(c => c.type === "text" || c.type === "title") ?? null;
+      }
+    }
+
+    if (bestChunk) {
+      handleChunkClick(bestChunk);
+      // Scroll the chunk into view after a short delay
+      setTimeout(() => {
+        const node = chunkRefMap.current[bestChunk!.id];
+        if (node) node.scrollIntoView({ behavior: "smooth", block: "center" });
+      }, 300);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [chunks.length, highlightInfo]);
+
   const isPdf = /\.pdf$/i.test(doc.file_name);
   const isImage = /\.(png|jpg|jpeg|webp|gif|bmp|tiff|heic)$/i.test(doc.file_name);
   // file_path is like "./uploads/uuid.pdf" or "uploads/uuid.pdf" — extract just the filename
   const fileBasename = doc.file_path ? doc.file_path.replace(/\\/g, "/").split("/").pop() : null;
   const BACKEND = (import.meta as { env?: { VITE_API_BASE?: string } }).env?.VITE_API_BASE?.replace(/\/api\/v1\/?$/, "") ?? "http://127.0.0.1:8000";
   const fileUrl = fileBasename ? `${BACKEND}/uploads/${fileBasename}` : null;
+
+  // Track which page the PDF iframe is currently showing so we can force a reload when page changes
+  const [pdfPage, setPdfPage] = useState(currentPage);
+
+  // When currentPage changes (via page nav buttons), sync pdfPage
+  useEffect(() => { setPdfPage(currentPage); }, [currentPage]);
+
+  // Click a chunk → jump PDF to that chunk's page and highlight the chunk
+  const handleChunkClick = (chunk: Chunk) => {
+    const chunkPage = (chunk.grounding?.page ?? 0) + 1; // grounding.page is 0-indexed
+    setSelectedChunkId(chunk.id);
+    if (chunkPage !== currentPage) {
+      setCurrentPage(chunkPage);
+      setPdfPage(chunkPage);
+    } else {
+      // Force iframe reload to the same page (re-set src)
+      setPdfPage(0);
+      setTimeout(() => setPdfPage(chunkPage), 50);
+    }
+  };
 
   const handleExport = async (jobId: string, type: "excel" | "csv") => {
     try {
@@ -155,6 +229,23 @@ function DocViewerPanel({ doc, onClose, allJobs }: { doc: DocMeta; onClose: () =
               <button onClick={() => setCurrentPage((p) => Math.min(pageCount, p + 1))} disabled={currentPage >= pageCount} className="p-1 rounded-lg hover:bg-white/10 disabled:opacity-30"><ChevronRight className="h-4 w-4 text-white" /></button>
             </div>
           )}
+          {/* Selected chunk source indicator */}
+          {selectedChunkId && (() => {
+            const sel = chunks.find(c => c.id === selectedChunkId);
+            if (!sel) return null;
+            const pg = (sel.grounding?.page ?? 0) + 1;
+            return (
+              <div className="flex items-center gap-2 px-4 py-1.5 shrink-0" style={{ backgroundColor: "rgba(37,99,235,0.12)", borderBottom: "1px solid rgba(37,99,235,0.25)" }}>
+                <MapPin className="h-3 w-3" style={{ color: "#60a5fa" }} />
+                <span className="text-xs font-bold" style={{ color: "#93c5fd" }}>
+                  {highlightInfo
+                    ? `Source of "${highlightInfo.field}" · ${sel.type} · page ${pg}`
+                    : `Showing source: chunk ${sel.type} · page ${pg}`}
+                </span>
+                <button onClick={() => { setSelectedChunkId(null); setHighlightInfo(null); }} className="ml-auto text-xs hover:text-white transition-colors" style={{ color: "rgba(255,255,255,0.3)" }}>✕</button>
+              </div>
+            );
+          })()}
           <div className="flex-1 overflow-auto flex items-start justify-center p-4" style={{ backgroundColor: "rgba(0,0,0,0.3)" }}>
             {isPdf && fileUrl ? (
               <div className="w-full h-full flex flex-col gap-2" style={{ minHeight: "500px" }}>
@@ -164,23 +255,16 @@ function DocViewerPanel({ doc, onClose, allJobs }: { doc: DocMeta; onClose: () =
                     Open in new tab ↗
                   </a>
                 </div>
-                <object
-                  data={`${fileUrl}#page=${currentPage}&toolbar=1&navpanes=0`}
-                  type="application/pdf"
-                  className="w-full flex-1 rounded-lg"
-                  style={{ minHeight: "480px", border: "1px solid rgba(255,255,255,0.1)" }}
-                >
-                  {/* Fallback if object tag doesn't work */}
-                  <div className="flex flex-col items-center justify-center h-64 text-center gap-3">
-                    <FileText className="h-12 w-12 opacity-20" style={{ color: "#60a5fa" }} />
-                    <p className="text-sm font-bold" style={{ color: "rgba(255,255,255,0.4)" }}>PDF preview blocked by browser</p>
-                    <a href={fileUrl} target="_blank" rel="noopener noreferrer"
-                      className="flex items-center gap-2 rounded-xl px-4 py-2 text-sm font-bold text-white"
-                      style={{ background: "linear-gradient(135deg, #2563eb, #7c3aed)" }}>
-                      Open PDF ↗
-                    </a>
-                  </div>
-                </object>
+                {pdfPage > 0 && (
+                  <iframe
+                    ref={pdfIframeRef}
+                    key={`pdf-${pdfPage}`}
+                    src={`${fileUrl}#page=${pdfPage}&toolbar=1&navpanes=0`}
+                    className="w-full flex-1 rounded-lg"
+                    style={{ minHeight: "480px", border: selectedChunkId ? "2px solid #3b82f6" : "1px solid rgba(255,255,255,0.1)", transition: "border 0.2s" }}
+                    title="PDF Preview"
+                  />
+                )}
               </div>
             ) : isImage && fileUrl ? (
               <img src={fileUrl} alt={doc.file_name} className="max-w-full rounded-lg shadow-xl" style={{ border: "1px solid rgba(255,255,255,0.1)" }} />
@@ -218,20 +302,63 @@ function DocViewerPanel({ doc, onClose, allJobs }: { doc: DocMeta; onClose: () =
               <div className="flex items-center justify-center py-16"><Loader2 className="h-6 w-6 animate-spin" style={{ color: "#3b82f6" }} /></div>
             ) : activeTab === "markdown" ? (
               <div className="space-y-3">
-                {displayChunks.length > 0 ? displayChunks.map((chunk, i) => (
-                  <div key={chunk.id ?? i}>
-                    <div className="flex items-center gap-2 mb-1.5">
-                      <span className="text-xs" style={{ color: "rgba(255,255,255,0.25)" }}>{i + 1} · {chunk.type}</span>
-                      {showConfidence && <span className="text-xs rounded-md px-1.5 py-0.5 font-bold" style={{ backgroundColor: chunk.type === "table" ? "rgba(34,197,94,0.15)" : "rgba(37,99,235,0.15)", color: chunk.type === "table" ? "#22c55e" : "#60a5fa" }}>{chunk.type === "table" ? "95%" : chunk.type === "title" ? "98%" : "87%"}</span>}
-                      {chunk.type === "table" && <Table2 className="h-3 w-3" style={{ color: "#22d3ee" }} />}
-                    </div>
-                    {chunk.type === "table" ? <TableChunk chunk={chunk} /> : (
-                      <div className="rounded-lg px-3 py-2.5 font-mono text-xs leading-relaxed whitespace-pre-wrap" style={{ backgroundColor: chunk.type === "title" ? "rgba(37,99,235,0.06)" : "rgba(255,255,255,0.02)", border: "1px solid rgba(255,255,255,0.06)", color: chunk.type === "title" ? "#e2e8f0" : "rgba(255,255,255,0.6)", fontWeight: chunk.type === "title" ? "700" : "400" }}>
-                        {chunk.markdown.replace(/<[^>]+>/g, "").replace(/&[^;]+;/g, " ").trim()}
-                      </div>
+                {/* Click-to-navigate hint */}
+                {displayChunks.length > 0 && (
+                  <div className="flex items-center gap-2 rounded-lg px-3 py-2 mb-1" style={{ backgroundColor: "rgba(37,99,235,0.07)", border: "1px solid rgba(37,99,235,0.18)" }}>
+                    <MapPin className="h-3 w-3 shrink-0" style={{ color: "#60a5fa" }} />
+                    <span className="text-xs" style={{ color: "rgba(255,255,255,0.45)" }}>
+                      {highlightInfo
+                        ? `Showing source of "${highlightInfo.field}" — highlighted chunk below`
+                        : "Click any chunk to jump to its location in the PDF"}
+                    </span>
+                    {(selectedChunkId || highlightInfo) && (
+                      <button onClick={() => { setSelectedChunkId(null); setHighlightInfo(null); }} className="ml-auto text-xs rounded px-1.5 py-0.5 hover:bg-white/10 transition-colors" style={{ color: "rgba(255,255,255,0.3)" }}>
+                        Clear
+                      </button>
                     )}
                   </div>
-                )) : markdown ? (
+                )}
+                {displayChunks.length > 0 ? displayChunks.map((chunk, i) => {
+                  const isSelected = selectedChunkId === chunk.id;
+                  const chunkPage = (chunk.grounding?.page ?? 0) + 1;
+                  return (
+                    <div
+                      key={chunk.id ?? i}
+                      ref={(node) => chunkRefs(node, chunk.id ?? String(i))}
+                      onClick={() => handleChunkClick(chunk)}
+                      className="cursor-pointer rounded-xl transition-all"
+                      style={{
+                        outline: isSelected ? "2px solid #3b82f6" : "2px solid transparent",
+                        outlineOffset: "2px",
+                        backgroundColor: isSelected ? "rgba(37,99,235,0.08)" : "transparent",
+                      }}
+                      title={`Click to jump to page ${chunkPage} in PDF`}
+                    >
+                      <div className="flex items-center gap-2 mb-1.5 px-1">
+                        <span className="text-xs" style={{ color: "rgba(255,255,255,0.25)" }}>{i + 1} · {chunk.type}</span>
+                        {showConfidence && <span className="text-xs rounded-md px-1.5 py-0.5 font-bold" style={{ backgroundColor: chunk.type === "table" ? "rgba(34,197,94,0.15)" : "rgba(37,99,235,0.15)", color: chunk.type === "table" ? "#22c55e" : "#60a5fa" }}>{chunk.type === "table" ? "95%" : chunk.type === "title" ? "98%" : "87%"}</span>}
+                        {chunk.type === "table" && <Table2 className="h-3 w-3" style={{ color: "#22d3ee" }} />}
+                        {/* Page source badge */}
+                        <span
+                          className="ml-auto flex items-center gap-1 rounded-md px-1.5 py-0.5 text-xs font-bold"
+                          style={{
+                            backgroundColor: isSelected ? "rgba(37,99,235,0.25)" : "rgba(255,255,255,0.05)",
+                            color: isSelected ? "#93c5fd" : "rgba(255,255,255,0.3)",
+                            border: isSelected ? "1px solid rgba(59,130,246,0.4)" : "1px solid rgba(255,255,255,0.06)",
+                          }}
+                        >
+                          <MapPin className="h-2.5 w-2.5" />
+                          p.{chunkPage}
+                        </span>
+                      </div>
+                      {chunk.type === "table" ? <TableChunk chunk={chunk} /> : (
+                        <div className="rounded-lg px-3 py-2.5 font-mono text-xs leading-relaxed whitespace-pre-wrap" style={{ backgroundColor: isSelected ? "rgba(37,99,235,0.1)" : chunk.type === "title" ? "rgba(37,99,235,0.06)" : "rgba(255,255,255,0.02)", border: isSelected ? "1px solid rgba(59,130,246,0.35)" : "1px solid rgba(255,255,255,0.06)", color: chunk.type === "title" ? "#e2e8f0" : "rgba(255,255,255,0.6)", fontWeight: chunk.type === "title" ? "700" : "400" }}>
+                          {chunk.markdown.replace(/<[^>]+>/g, "").replace(/&[^;]+;/g, " ").trim()}
+                        </div>
+                      )}
+                    </div>
+                  );
+                }) : markdown ? (
                   <div className="font-mono text-xs leading-relaxed whitespace-pre-wrap" style={{ color: "rgba(255,255,255,0.6)" }}>{markdown.slice(0, 6000)}</div>
                 ) : (
                   <div className="flex flex-col items-center justify-center py-16 text-center">
@@ -304,7 +431,11 @@ function Documents() {
 
   // Auto-open viewer if ?view=docId is in the URL
   const routerState = useRouterState();
-  const viewParam = new URLSearchParams(routerState.location.search).get("view");
+  const searchParams = new URLSearchParams(routerState.location.search);
+  const viewParam = searchParams.get("view");
+  const fieldParam = searchParams.get("field") ?? undefined;
+  const sourceParam = searchParams.get("source") ?? undefined;
+  const evidenceParam = searchParams.get("evidence") ?? undefined;
 
   const { data, isLoading } = useQuery({
     queryKey: ["documents"],
@@ -400,7 +531,7 @@ function Documents() {
 
   return (
     <>
-      {viewingDoc && <DocViewerPanel doc={viewingDoc} onClose={() => setViewingDoc(null)} allJobs={allJobs} />}
+      {viewingDoc && <DocViewerPanel doc={viewingDoc} onClose={() => setViewingDoc(null)} allJobs={allJobs} highlightField={fieldParam} highlightSource={sourceParam} highlightEvidence={evidenceParam} />}
       {confirmDelete && (
         <ConfirmDeleteModal
           label={confirmDelete.label}

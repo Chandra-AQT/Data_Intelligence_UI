@@ -1,10 +1,10 @@
 import { useState } from "react";
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import toast from "react-hot-toast";
 import {
     BarChart2, Download, ChevronDown, ChevronUp,
-    Loader2, FileText, Boxes, X, CheckCircle2, AlertCircle
+    Loader2, FileText, Boxes, X, CheckCircle2, AlertCircle, MapPin
 } from "lucide-react";
 import { AppShell } from "@/components/aqt/app-shell";
 import { GradeBadge, StatusBadge } from "@/components/aqt/badges";
@@ -55,6 +55,7 @@ async function dlBatch(batchId: string, type: "excel" | "csv") {
 
 // ── Result drawer shown below a clicked row ───────────────────────────────────
 function ResultDrawer({ jobId, onClose }: { jobId: string; onClose: () => void }) {
+    const navigate = useNavigate();
     const { data, isLoading, error } = useQuery({
         queryKey: ["job-detail", jobId],
         queryFn: () => api.get(`/jobs/${jobId}`).then(r => r.data),
@@ -68,8 +69,22 @@ function ResultDrawer({ jobId, onClose }: { jobId: string; onClose: () => void }
         Array<{ result: Record<string, unknown>; confidence: Record<string, number>; schema_fields?: string[] }> | undefined;
     const singleResult = (result as { result?: Record<string, unknown> } | undefined)?.result;
     const confidence = (result as { confidence?: Record<string, number> } | undefined)?.confidence ?? {};
-    const schemaFields = (result as { schema_fields?: string[] } | undefined)?.schema_fields ?? [];
+    const schemaFields = (result as { schema_fields?: string[] } | undefined)?.schema_fields ?? data?.schema_fields ?? [];
     const failureLog = (result as { failure_log?: Array<{ type: string; reason?: string }> } | undefined)?.failure_log ?? [];
+    const sources: Record<string, string> = data?.sources ?? {};
+    const evidence: Record<string, string> = data?.evidence ?? {};
+    const documentId: string | undefined = data?.document_id;
+
+    // Navigate to the document viewer, highlighting the source chunk/page
+    const handleFieldClick = (fieldName: string, source: string, evid: string) => {
+        if (!documentId) return;
+        // Navigate to /documents?view=<docId>&field=<fieldName>&source=<source>
+        navigate({
+            to: "/documents",
+            search: { view: documentId, field: fieldName, source, evidence: evid } as never,
+        });
+        toast.success(`Navigating to source of "${fieldName}" in document`, { icon: "📍" });
+    };
 
     return (
         <div className="rounded-2xl mt-2 overflow-hidden"
@@ -90,6 +105,16 @@ function ResultDrawer({ jobId, onClose }: { jobId: string; onClose: () => void }
                     {quality?.score !== undefined && <GradeBadge score={quality.score} />}
                 </div>
                 <div className="flex items-center gap-2">
+                    {/* View source document button */}
+                    {documentId && (
+                        <button
+                            onClick={() => navigate({ to: "/documents", search: { view: documentId } as never })}
+                            className="flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-bold transition-all hover:-translate-y-0.5"
+                            style={{ backgroundColor: "rgba(37,99,235,0.15)", border: "1px solid rgba(37,99,235,0.3)", color: "#60a5fa" }}>
+                            <MapPin className="h-3 w-3" />
+                            View Source Doc
+                        </button>
+                    )}
                     {data?.status === "completed" && (
                         <>
                             <button onClick={() => dlJob(jobId, "excel")}
@@ -149,6 +174,9 @@ function ResultDrawer({ jobId, onClose }: { jobId: string; onClose: () => void }
                         <ResultView
                             result={singleResult}
                             confidence={confidence}
+                            sources={sources}
+                            evidence={evidence}
+                            documentId={documentId}
                             records={records}
                             schemaFields={schemaFields}
                             score={quality?.score ?? 0}
@@ -160,6 +188,7 @@ function ResultDrawer({ jobId, onClose }: { jobId: string; onClose: () => void }
                             avgConfidence={quality?.breakdown?.avg_confidence ? Math.round((quality.breakdown.avg_confidence / 35) * 100) : undefined}
                             missingFields={quality?.missing_critical ?? []}
                             suggestions={quality?.suggestions ?? []}
+                            onFieldClick={handleFieldClick}
                         />
                     )
                 )}
