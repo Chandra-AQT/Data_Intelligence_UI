@@ -22,7 +22,7 @@ interface ResultViewProps {
     missingFields?: string[];
     suggestions?: string[];
     onSmartRetry?: () => void;
-    onFieldClick?: (fieldName: string, source: string, evidence: string) => void;
+    onFieldClick?: (fieldName: string, source: string, evidence: string, fieldValue?: string) => void;
 }
 
 export function ResultView({
@@ -163,7 +163,7 @@ function FieldGrid({
     fields: string[];
     sources?: Record<string, string>;
     evidence?: Record<string, string>;
-    onFieldClick?: (fieldName: string, source: string, evidence: string) => void;
+    onFieldClick?: (fieldName: string, source: string, evidence: string, fieldValue?: string) => void;
 }) {
     return (
         <div className="mt-3 grid gap-1.5 sm:grid-cols-2">
@@ -187,7 +187,7 @@ function FieldGrid({
                         style={{ backgroundColor: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.06)" }}
                         onMouseEnter={e => (e.currentTarget.style.backgroundColor = isClickable ? "rgba(37,99,235,0.08)" : "rgba(255,255,255,0.06)")}
                         onMouseLeave={e => (e.currentTarget.style.backgroundColor = "rgba(255,255,255,0.03)")}
-                        onClick={() => isClickable && onFieldClick && onFieldClick(fname, src, evid)}
+                        onClick={() => isClickable && onFieldClick && onFieldClick(fname, src, evid, val != null ? String(val) : undefined)}
                         title={isClickable ? `Click to highlight "${fname}" in PDF` : undefined}
                     >
                         <div className="min-w-0 flex-1">

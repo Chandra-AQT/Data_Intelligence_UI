@@ -1106,10 +1106,9 @@ function Step5Results({ result, jobId, mode, schemaId, provider, singleDocId, on
   const failureLog = (result as { failure_log?: Array<{ type: string; reason?: string }> })?.failure_log ?? [];
 
   // When a field is clicked → find matching chunk → highlight + jump page
-  const handleFieldClick = useCallback((fieldName: string, src: string, evid: string) => {
+  const handleFieldClick = useCallback((fieldName: string, src: string, evid: string, fieldValue?: string) => {
     setActiveField(fieldName);
 
-    // If parsed data not loaded yet, still show the field as active
     if (!chunks.length) {
       toast(`📍 Locating "${fieldName}" in document…`, { duration: 2000 });
       return;
@@ -1129,32 +1128,40 @@ function Step5Results({ result, jobId, mode, schemaId, provider, singleDocId, on
       }
     }
 
-    // Strategy 2: search for the field value itself in chunks
+    // Strategy 2: search using the passed field value directly (works for multi-record)
+    if (!bestChunk && fieldValue && fieldValue.length > 2) {
+      const valLower = fieldValue.toLowerCase().trim();
+      for (const chunk of chunks) {
+        const plain = chunk.markdown.replace(/<[^>]+>/g, "").replace(/&[^;]+;/g, " ").toLowerCase();
+        if (plain.includes(valLower)) { bestChunk = chunk; break; }
+      }
+      // Partial match with first 20 chars
+      if (!bestChunk && valLower.length > 5) {
+        const partial = valLower.slice(0, 20);
+        for (const chunk of chunks) {
+          const plain = chunk.markdown.replace(/<[^>]+>/g, "").replace(/&[^;]+;/g, " ").toLowerCase();
+          if (plain.includes(partial)) { bestChunk = chunk; break; }
+        }
+      }
+    }
+
+    // Strategy 3: fallback using singleResult/records[0] value
     if (!bestChunk) {
-      // Get the actual extracted value — check both single result and multi-record
-      const fieldVal = (() => {
+      const fallbackVal = (() => {
         const r = singleResult;
         const rec = records?.[0]?.result;
         const v = r?.[fieldName] ?? rec?.[fieldName];
         return v != null ? String(v).toLowerCase().trim() : "";
       })();
-
-      if (fieldVal.length > 2) {
+      if (fallbackVal.length > 2) {
         for (const chunk of chunks) {
           const plain = chunk.markdown.replace(/<[^>]+>/g, "").replace(/&[^;]+;/g, " ").toLowerCase();
-          if (plain.includes(fieldVal)) { bestChunk = chunk; break; }
-        }
-        if (!bestChunk && fieldVal.length > 5) {
-          const partial = fieldVal.slice(0, 20);
-          for (const chunk of chunks) {
-            const plain = chunk.markdown.replace(/<[^>]+>/g, "").replace(/&[^;]+;/g, " ").toLowerCase();
-            if (plain.includes(partial)) { bestChunk = chunk; break; }
-          }
+          if (plain.includes(fallbackVal)) { bestChunk = chunk; break; }
         }
       }
     }
 
-    // Strategy 3: fallback by source type — prefer chunks WITH a bounding box
+    // Strategy 4: fallback by source type — prefer chunks WITH a bounding box
     if (!bestChunk) {
       const typed = src === "table"
         ? chunks.filter(c => c.type === "table")
@@ -1168,28 +1175,20 @@ function Step5Results({ result, jobId, mode, schemaId, provider, singleDocId, on
       if (bestChunk.grounding?.box) {
         const box = bestChunk.grounding.box;
         setHighlights([{
-          left: box.left,
-          top: box.top,
-          right: box.right,
-          bottom: box.bottom,
+          left: box.left, top: box.top, right: box.right, bottom: box.bottom,
           label: `Source of "${fieldName}"`,
           color: bestChunk.type === "table" ? "green" : "yellow",
         }]);
         toast.success(`📍 Highlighted "${fieldName}" on page ${page}`, { duration: 2000 });
       } else {
-        // No bounding box — highlight a wide band at the estimated vertical position
-        // Use chunk index to estimate vertical position on the page
-        const chunkIdx = chunks.indexOf(bestChunk);
-        const chunksOnPage = chunks.filter(c => (chunkPageMap[c.id] ?? 1) === (chunkPageMap[bestChunk!.id] ?? 1));
+        const chunksOnPage = chunks.filter(c => (chunkPageMap[c.id] ?? 1) === page);
         const posInPage = chunksOnPage.indexOf(bestChunk);
         const totalOnPage = Math.max(chunksOnPage.length, 1);
         const estimatedTop = posInPage / totalOnPage;
         const estimatedBottom = (posInPage + 1) / totalOnPage;
         setHighlights([{
-          left: 0.02,
-          top: Math.max(0, estimatedTop - 0.02),
-          right: 0.98,
-          bottom: Math.min(1, estimatedBottom + 0.02),
+          left: 0.02, top: Math.max(0, estimatedTop - 0.02),
+          right: 0.98, bottom: Math.min(1, estimatedBottom + 0.02),
           label: `Source of "${fieldName}" (estimated)`,
           color: bestChunk.type === "table" ? "green" : "yellow",
         }]);
