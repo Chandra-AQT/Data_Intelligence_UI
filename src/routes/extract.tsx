@@ -1,4 +1,4 @@
-﻿import { useState, useEffect, useRef, useCallback, useMemo } from "react";
+﻿import { useState, useEffect, useRef, useCallback, useMemo, Component, type ReactNode, type ErrorInfo } from "react";
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useDropzone } from "react-dropzone";
@@ -18,6 +18,28 @@ import { api, downloadBlob, storedKey } from "@/lib/aqt";
 import { PdfViewer, type HighlightBox } from "@/components/aqt/pdf-viewer";
 
 export const Route = createFileRoute("/extract")({ component: ExtractionWizard });
+
+// ── PDF Error Boundary — prevents PDF crashes from killing the whole page ─────
+class PdfErrorBoundary extends Component<{ children: ReactNode; fallback?: ReactNode }, { hasError: boolean }> {
+  constructor(props: { children: ReactNode; fallback?: ReactNode }) {
+    super(props);
+    this.state = { hasError: false };
+  }
+  static getDerivedStateFromError() { return { hasError: true }; }
+  componentDidCatch(error: Error, info: ErrorInfo) { console.warn("PDF viewer error:", error, info); }
+  render() {
+    if (this.state.hasError) {
+      return this.props.fallback ?? (
+        <div className="flex-1 flex flex-col items-center justify-center gap-3" style={{ backgroundColor: "rgba(0,0,0,0.3)" }}>
+          <FileText className="h-12 w-12 opacity-20" style={{ color: "#60a5fa" }} />
+          <p className="text-sm font-bold" style={{ color: "rgba(255,255,255,0.4)" }}>PDF preview unavailable</p>
+          <button onClick={() => this.setState({ hasError: false })} className="text-xs underline" style={{ color: "#60a5fa" }}>Retry</button>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
 
 // ── Parsed Content Viewer Modal ───────────────────────────────────────────────
 function ParsedViewer({ docId, fileName, onClose }: { docId: string; fileName: string; onClose: () => void }) {
@@ -1227,13 +1249,15 @@ function Step5Results({ result, jobId, mode, schemaId, provider, singleDocId, on
             </div>
           )}
           {isPdf && fileUrl ? (
-            <PdfViewer
-              fileUrl={fileUrl}
-              pageNumber={pdfPage}
-              totalPages={pageCount}
-              onPageChange={setPdfPage}
-              highlights={highlights}
-            />
+            <PdfErrorBoundary>
+              <PdfViewer
+                fileUrl={fileUrl}
+                pageNumber={pdfPage}
+                totalPages={pageCount}
+                onPageChange={setPdfPage}
+                highlights={highlights}
+              />
+            </PdfErrorBoundary>
           ) : fileUrl ? (
             <div className="flex-1 flex flex-col items-center justify-center gap-3" style={{ backgroundColor: "rgba(0,0,0,0.3)" }}>
               <FileText className="h-16 w-16 opacity-20" style={{ color: "#60a5fa" }} />

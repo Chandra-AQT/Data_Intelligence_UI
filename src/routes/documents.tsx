@@ -1,4 +1,4 @@
-import { useCallback, useState, useEffect, useRef, useMemo } from "react";
+import { useCallback, useState, useEffect, useRef, useMemo, Component, type ReactNode, type ErrorInfo } from "react";
 import { createFileRoute, Link, useRouterState } from "@tanstack/react-router";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useDropzone } from "react-dropzone";
@@ -8,6 +8,23 @@ import {
   ChevronLeft, ChevronRight, FileText, ToggleLeft, ToggleRight,
   Table2, Code2, Loader2, Download, ArrowRight, Search, Filter, AlertTriangle, Copy, Check, MapPin
 } from "lucide-react";
+
+// ── PDF Error Boundary ────────────────────────────────────────────────────────
+class PdfErrorBoundary extends Component<{ children: ReactNode }, { hasError: boolean }> {
+  constructor(props: { children: ReactNode }) { super(props); this.state = { hasError: false }; }
+  static getDerivedStateFromError() { return { hasError: true }; }
+  componentDidCatch(e: Error) { console.warn("PDF viewer error:", e); }
+  render() {
+    if (this.state.hasError) return (
+      <div className="flex-1 flex flex-col items-center justify-center gap-3" style={{ backgroundColor: "rgba(0,0,0,0.3)" }}>
+        <FileText className="h-12 w-12 opacity-20" style={{ color: "#60a5fa" }} />
+        <p className="text-sm font-bold" style={{ color: "rgba(255,255,255,0.4)" }}>PDF preview unavailable</p>
+        <button onClick={() => this.setState({ hasError: false })} className="text-xs underline" style={{ color: "#60a5fa" }}>Retry</button>
+      </div>
+    );
+    return this.props.children;
+  }
+}
 import { AppShell, SkeletonTable, EmptyState } from "@/components/aqt/app-shell";
 import { pushNotification } from "@/components/aqt/app-shell";
 import { StatusBadge, GradeBadge } from "@/components/aqt/badges";
@@ -297,13 +314,15 @@ function DocViewerPanel({ doc, onClose, allJobs, highlightField, highlightSource
           })()}
 
           {isPdf && fileUrl ? (
-            <PdfViewer
-              fileUrl={fileUrl}
-              pageNumber={currentPage}
-              totalPages={pageCount}
-              onPageChange={setCurrentPage}
-              highlights={highlights}
-            />
+            <PdfErrorBoundary>
+              <PdfViewer
+                fileUrl={fileUrl}
+                pageNumber={currentPage}
+                totalPages={pageCount}
+                onPageChange={setCurrentPage}
+                highlights={highlights}
+              />
+            </PdfErrorBoundary>
           ) : isImage && fileUrl ? (
             <div className="flex-1 overflow-auto flex items-start justify-center p-4" style={{ backgroundColor: "rgba(0,0,0,0.3)" }}>
               <img src={fileUrl} alt={doc.file_name} className="max-w-full rounded-lg shadow-xl" style={{ border: "1px solid rgba(255,255,255,0.1)" }} />
