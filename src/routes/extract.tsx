@@ -1006,9 +1006,19 @@ function Step5Results({ result, jobId, mode, schemaId, provider, singleDocId, on
     staleTime: 60_000,
   });
 
-  const documentId: string | undefined = jobDetail?.document_id ?? singleDocId;
+  // Use singleDocId immediately — no need to wait for jobDetail for the document ID
+  const documentId: string | undefined = singleDocId ?? jobDetail?.document_id;
   const sources: Record<string, string> = jobDetail?.sources ?? {};
   const evidence: Record<string, string> = jobDetail?.evidence ?? {};
+
+  // Get file_path from the already-cached documents list (avoids extra fetch)
+  const { data: docsListData } = useQuery({
+    queryKey: ["documents"],
+    queryFn: () => api.get("/documents").then(r => r.data.documents ?? []),
+    staleTime: 60_000,
+    enabled: !isBatch,
+  });
+  const docFromList = (docsListData ?? []).find((d: { id: string }) => d.id === documentId);
 
   // Fetch parsed document data for grounding boxes
   const { data: parsedData } = useQuery({
@@ -1021,7 +1031,8 @@ function Step5Results({ result, jobId, mode, schemaId, provider, singleDocId, on
   const chunks: Array<{ id: string; type: string; markdown: string; grounding?: { page: number; box?: { left: number; top: number; right: number; bottom: number } } }> =
     (parsedData as { chunks?: typeof chunks })?.chunks ?? [];
   const splits: Array<{ pages: number[]; chunks: string[] }> = (parsedData as { splits?: typeof splits })?.splits ?? [];
-  const pageCount: number = (parsedData as { metadata?: { page_count?: number } })?.metadata?.page_count ?? 1;
+  const pageCount: number = (parsedData as { metadata?: { page_count?: number } })?.metadata?.page_count
+    ?? docFromList?.page_count ?? 1;
 
   // Build chunk→page map (same logic as documents.tsx)
   const chunkPageMap = useMemo(() => {
@@ -1041,15 +1052,11 @@ function Step5Results({ result, jobId, mode, schemaId, provider, singleDocId, on
   const [activeField, setActiveField] = useState<string | null>(null);
   const [highlights, setHighlights] = useState<HighlightBox[]>([]);
 
-  // File URL
+  // Build file URL from the document list entry (file_path is like "./uploads/uuid.pdf")
   const BACKEND = (import.meta as { env?: { VITE_API_BASE?: string } }).env?.VITE_API_BASE?.replace(/\/api\/v1\/?$/, "") ?? "http://127.0.0.1:8000";
-  const { data: docMeta } = useQuery({
-    queryKey: ["doc-meta-result", documentId],
-    queryFn: () => api.get(`/documents/${documentId}`).then(r => r.data),
-    enabled: !!documentId && !isBatch,
-    staleTime: 300_000,
-  });
-  const fileBasename = docMeta?.file_path ? (docMeta.file_path as string).replace(/\\/g, "/").split("/").pop() : null;
+  const fileBasename = docFromList?.file_path
+    ? (docFromList.file_path as string).replace(/\\/g, "/").split("/").pop()
+    : null;
   const fileUrl = fileBasename ? `${BACKEND}/uploads/${fileBasename}` : null;
   const isPdf = fileUrl && /\.pdf$/i.test(fileUrl);
 
@@ -1173,12 +1180,15 @@ function Step5Results({ result, jobId, mode, schemaId, provider, singleDocId, on
               onPageChange={setPdfPage}
               highlights={highlights}
             />
-          ) : (
+          ) : fileUrl ? (
             <div className="flex-1 flex flex-col items-center justify-center gap-3" style={{ backgroundColor: "rgba(0,0,0,0.3)" }}>
               <FileText className="h-16 w-16 opacity-20" style={{ color: "#60a5fa" }} />
-              <p className="text-sm font-bold" style={{ color: "rgba(255,255,255,0.3)" }}>
-                {fileUrl ? "Non-PDF document" : "Loading document…"}
-              </p>
+              <p className="text-sm font-bold" style={{ color: "rgba(255,255,255,0.3)" }}>Non-PDF document — preview not available</p>
+            </div>
+          ) : (
+            <div className="flex-1 flex flex-col items-center justify-center gap-3" style={{ backgroundColor: "rgba(0,0,0,0.3)" }}>
+              <Loader2 className="h-8 w-8 animate-spin" style={{ color: "#3b82f6" }} />
+              <p className="text-sm font-bold" style={{ color: "rgba(255,255,255,0.3)" }}>Loading document…</p>
             </div>
           )}
         </div>
