@@ -1087,6 +1087,14 @@ function Step5Results({ result, jobId, mode, schemaId, provider, singleDocId, on
   const fileUrl = fileBasename ? `${BACKEND}/uploads/${fileBasename}` : null;
   const isPdf = fileUrl && /\.pdf$/i.test(fileUrl);
 
+  // Declare result-derived values BEFORE handleFieldClick to avoid temporal dead zone
+  const quality = (result as { quality?: { score?: number; breakdown?: { coverage?: number; avg_confidence?: number }; missing_critical?: string[]; suggestions?: string[] } })?.quality;
+  const records = (result as { records?: unknown[] })?.records as Array<{ result: Record<string, unknown>; confidence: Record<string, number>; schema_fields?: string[] }> | undefined;
+  const singleResult = (result as { result?: Record<string, unknown> })?.result;
+  const confidence = (result as { confidence?: Record<string, number> })?.confidence ?? {};
+  const schemaFields = (result as { schema_fields?: string[] })?.schema_fields ?? [];
+  const failureLog = (result as { failure_log?: Array<{ type: string; reason?: string }> })?.failure_log ?? [];
+
   // When a field is clicked → find matching chunk → highlight + jump page
   const handleFieldClick = useCallback((fieldName: string, src: string, evid: string) => {
     setActiveField(fieldName);
@@ -1193,13 +1201,6 @@ function Step5Results({ result, jobId, mode, schemaId, provider, singleDocId, on
       }
     } catch { toast.error("Export failed"); }
   };
-
-  const quality = (result as { quality?: { score?: number; breakdown?: { coverage?: number; avg_confidence?: number }; missing_critical?: string[]; suggestions?: string[] } })?.quality;
-  const records = (result as { records?: unknown[] })?.records as Array<{ result: Record<string, unknown>; confidence: Record<string, number>; schema_fields?: string[] }> | undefined;
-  const singleResult = (result as { result?: Record<string, unknown> })?.result;
-  const confidence = (result as { confidence?: Record<string, number> })?.confidence ?? {};
-  const schemaFields = (result as { schema_fields?: string[] })?.schema_fields ?? [];
-  const failureLog = (result as { failure_log?: Array<{ type: string; reason?: string }> })?.failure_log ?? [];
 
   // Header bar (shared for both single and batch)
   const headerBar = (
