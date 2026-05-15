@@ -15,7 +15,7 @@ import { ResultView } from "@/components/aqt/result-view";
 import { StatusBadge } from "@/components/aqt/badges";
 import { Button } from "@/components/ui/button";
 import { api, downloadBlob, storedKey } from "@/lib/aqt";
-import { PdfViewer, type HighlightBox } from "@/components/aqt/pdf-viewer";
+import { PdfViewerLazy as PdfViewer, type HighlightBox } from "@/components/aqt/pdf-viewer-lazy";
 
 export const Route = createFileRoute("/extract")({ component: ExtractionWizard });
 
