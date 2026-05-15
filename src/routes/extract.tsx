@@ -1,4 +1,4 @@
-﻿import { useState, useEffect, useRef, useCallback } from "react";
+﻿import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useDropzone } from "react-dropzone";
@@ -6,7 +6,7 @@ import toast from "react-hot-toast";
 import {
   FileText, Boxes, FolderArchive, Upload, Layers3, Cpu, Zap, BarChart2,
   CheckCircle2, ChevronRight, ChevronLeft, Download, Loader2,
-  RotateCcw, AlertCircle, X, FolderOpen, Eye
+  RotateCcw, AlertCircle, X, FolderOpen, Eye, MapPin
 } from "lucide-react";
 import { pushNotification } from "@/components/aqt/app-shell";
 import { AppShell } from "@/components/aqt/app-shell";
@@ -15,6 +15,7 @@ import { ResultView } from "@/components/aqt/result-view";
 import { StatusBadge } from "@/components/aqt/badges";
 import { Button } from "@/components/ui/button";
 import { api, downloadBlob, storedKey } from "@/lib/aqt";
+import { PdfViewer, type HighlightBox } from "@/components/aqt/pdf-viewer";
 
 export const Route = createFileRoute("/extract")({ component: ExtractionWizard });
 
@@ -986,16 +987,112 @@ function BatchResultsView({ batchId, schemaName }: { batchId: string; schemaName
   );
 }
 
-//  Step 5: Results 
-function Step5Results({ result, jobId, mode, schemaId, provider, onRestart }: {
+//  Step 5: Results — split-pane with PDF highlight
+function Step5Results({ result, jobId, mode, schemaId, provider, singleDocId, onRestart }: {
   result: Record<string, unknown>; jobId: string; mode: UploadMode;
-  schemaId: string; provider: ProviderValues; onRestart: () => void;
+  schemaId: string; provider: ProviderValues; singleDocId?: string; onRestart: () => void;
 }) {
   const { data: schemasData } = useQuery({ queryKey: ["schemas"], queryFn: () => api.get("/schemas").then(r => r.data.schemas ?? []) });
   const schemas = schemasData ?? [];
   const schemaName = schemas.find((s: { id: string; name: string }) => s.id === schemaId)?.name;
   const isBatch = mode !== "single";
   const batchId = isBatch ? (result.batch_id as string) : undefined;
+
+  // Fetch full job detail (has sources, evidence, document_id)
+  const { data: jobDetail } = useQuery({
+    queryKey: ["job-detail-extract", jobId],
+    queryFn: () => api.get(`/jobs/${jobId}`).then(r => r.data),
+    enabled: !!jobId && !isBatch,
+    staleTime: 60_000,
+  });
+
+  const documentId: string | undefined = jobDetail?.document_id ?? singleDocId;
+  const sources: Record<string, string> = jobDetail?.sources ?? {};
+  const evidence: Record<string, string> = jobDetail?.evidence ?? {};
+
+  // Fetch parsed document data for grounding boxes
+  const { data: parsedData } = useQuery({
+    queryKey: ["doc-parsed-result", documentId],
+    queryFn: () => api.get(`/documents/${documentId}/parsed`).then(r => r.data),
+    enabled: !!documentId && !isBatch,
+    staleTime: 300_000,
+  });
+
+  const chunks: Array<{ id: string; type: string; markdown: string; grounding?: { page: number; box?: { left: number; top: number; right: number; bottom: number } } }> =
+    (parsedData as { chunks?: typeof chunks })?.chunks ?? [];
+  const splits: Array<{ pages: number[]; chunks: string[] }> = (parsedData as { splits?: typeof splits })?.splits ?? [];
+  const pageCount: number = (parsedData as { metadata?: { page_count?: number } })?.metadata?.page_count ?? 1;
+
+  // Build chunk→page map (same logic as documents.tsx)
+  const chunkPageMap = useMemo(() => {
+    const map: Record<string, number> = {};
+    for (const c of chunks) { if (c.grounding?.page !== undefined) map[c.id] = c.grounding.page + 1; }
+    for (const s of splits) { const pg = (s.pages?.[0] ?? 0) + 1; for (const cid of s.chunks ?? []) { if (!map[cid]) map[cid] = pg; } }
+    const unique = new Set(Object.values(map));
+    if (unique.size === 1 && pageCount > 1 && chunks.length > 0) {
+      const cpp = Math.ceil(chunks.length / pageCount);
+      chunks.forEach((c, i) => { map[c.id] = Math.min(Math.floor(i / cpp) + 1, pageCount); });
+    }
+    return map;
+  }, [chunks, splits, pageCount]);
+
+  // PDF viewer state
+  const [pdfPage, setPdfPage] = useState(1);
+  const [activeField, setActiveField] = useState<string | null>(null);
+  const [highlights, setHighlights] = useState<HighlightBox[]>([]);
+
+  // File URL
+  const BACKEND = (import.meta as { env?: { VITE_API_BASE?: string } }).env?.VITE_API_BASE?.replace(/\/api\/v1\/?$/, "") ?? "http://127.0.0.1:8000";
+  const { data: docMeta } = useQuery({
+    queryKey: ["doc-meta-result", documentId],
+    queryFn: () => api.get(`/documents/${documentId}`).then(r => r.data),
+    enabled: !!documentId && !isBatch,
+    staleTime: 300_000,
+  });
+  const fileBasename = docMeta?.file_path ? (docMeta.file_path as string).replace(/\\/g, "/").split("/").pop() : null;
+  const fileUrl = fileBasename ? `${BACKEND}/uploads/${fileBasename}` : null;
+  const isPdf = fileUrl && /\.pdf$/i.test(fileUrl);
+
+  // When a field is clicked → find matching chunk → highlight + jump page
+  const handleFieldClick = useCallback((fieldName: string, src: string, evid: string) => {
+    setActiveField(fieldName);
+    if (!chunks.length) return;
+
+    let bestChunk: typeof chunks[0] | null = null;
+    const evidLower = evid.toLowerCase();
+
+    // Try evidence text match
+    if (evidLower.length > 5) {
+      const keys = [evidLower.slice(0, 120), evidLower.slice(0, 60), evidLower.slice(0, 30)].filter(k => k.trim().length > 5);
+      outer: for (const key of keys) {
+        for (const chunk of chunks) {
+          const plain = chunk.markdown.replace(/<[^>]+>/g, "").replace(/&[^;]+;/g, " ").toLowerCase();
+          if (plain.includes(key.trim())) { bestChunk = chunk; break outer; }
+        }
+      }
+    }
+    // Fallback by source type
+    if (!bestChunk) {
+      bestChunk = src === "table"
+        ? chunks.find(c => c.type === "table") ?? null
+        : chunks.find(c => c.type === "text" || c.type === "title") ?? null;
+    }
+
+    if (bestChunk) {
+      const page = chunkPageMap[bestChunk.id] ?? 1;
+      setPdfPage(page);
+      if (bestChunk.grounding?.box) {
+        const box = bestChunk.grounding.box;
+        setHighlights([{
+          left: box.left, top: box.top, right: box.right, bottom: box.bottom,
+          label: `Source of "${fieldName}"`,
+          color: bestChunk.type === "table" ? "green" : "yellow",
+        }]);
+      } else {
+        setHighlights([]);
+      }
+    }
+  }, [chunks, chunkPageMap]);
 
   const handleExport = async (type: "excel" | "csv" | "json") => {
     try {
@@ -1016,38 +1113,108 @@ function Step5Results({ result, jobId, mode, schemaId, provider, onRestart }: {
   const schemaFields = (result as { schema_fields?: string[] })?.schema_fields ?? [];
   const failureLog = (result as { failure_log?: Array<{ type: string; reason?: string }> })?.failure_log ?? [];
 
-  return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between flex-wrap gap-4">
-        <div className="flex items-center gap-3">
-          <div className="flex h-10 w-10 items-center justify-center rounded-2xl" style={{ background: "linear-gradient(135deg,#22c55e,#16a34a)" }}>
-            <CheckCircle2 className="h-5 w-5 text-white" />
-          </div>
-          <div>
-            <p className="text-sm font-black text-white">{isBatch ? "Batch Complete" : "Extraction Complete"}</p>
-            <p className="text-xs" style={{ color: "rgba(255,255,255,0.4)" }}>
-              {schemaName}  {provider.provider}{quality?.score !== undefined ? `  Score: ${quality.score}/100` : ""}
-            </p>
-          </div>
+  // Header bar (shared for both single and batch)
+  const headerBar = (
+    <div className="flex items-center justify-between flex-wrap gap-3 px-5 py-3 shrink-0"
+      style={{ backgroundColor: "#060b14", borderBottom: "1px solid rgba(255,255,255,0.08)" }}>
+      <div className="flex items-center gap-3">
+        <div className="flex h-8 w-8 items-center justify-center rounded-xl" style={{ background: "linear-gradient(135deg,#22c55e,#16a34a)" }}>
+          <CheckCircle2 className="h-4 w-4 text-white" />
         </div>
-        <div className="flex gap-2">
-          <button onClick={() => handleExport("excel")} className="flex items-center gap-1.5 rounded-xl px-4 py-2 text-xs font-black text-white transition-all hover:-translate-y-0.5" style={{ background: "linear-gradient(135deg,#2563eb,#7c3aed)" }}><Download className="h-3.5 w-3.5" />Excel</button>
-          <button onClick={() => handleExport("csv")} className="flex items-center gap-1.5 rounded-xl px-3 py-2 text-xs font-bold transition-all" style={{ backgroundColor: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.1)", color: "rgba(255,255,255,0.6)" }}>CSV</button>
-          {!isBatch && <button onClick={() => handleExport("json")} className="flex items-center gap-1.5 rounded-xl px-3 py-2 text-xs font-bold transition-all" style={{ backgroundColor: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.1)", color: "rgba(255,255,255,0.6)" }}>JSON</button>}
-          <button onClick={onRestart} className="flex items-center gap-1.5 rounded-xl px-3 py-2 text-xs font-bold transition-all" style={{ backgroundColor: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.1)", color: "rgba(255,255,255,0.6)" }}><RotateCcw className="h-3.5 w-3.5" /> New</button>
+        <div>
+          <p className="text-sm font-black text-white">{isBatch ? "Batch Complete" : "Extraction Complete"}</p>
+          <p className="text-xs" style={{ color: "rgba(255,255,255,0.4)" }}>
+            {schemaName} · {provider.provider}{quality?.score !== undefined ? ` · Score: ${quality.score}/100` : ""}
+          </p>
         </div>
       </div>
-      {isBatch ? (
+      <div className="flex gap-2">
+        <button onClick={() => handleExport("excel")} className="flex items-center gap-1.5 rounded-xl px-4 py-1.5 text-xs font-black text-white" style={{ background: "linear-gradient(135deg,#2563eb,#7c3aed)" }}><Download className="h-3.5 w-3.5" />Excel</button>
+        <button onClick={() => handleExport("csv")} className="flex items-center gap-1.5 rounded-xl px-3 py-1.5 text-xs font-bold" style={{ backgroundColor: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.1)", color: "rgba(255,255,255,0.6)" }}>CSV</button>
+        {!isBatch && <button onClick={() => handleExport("json")} className="flex items-center gap-1.5 rounded-xl px-3 py-1.5 text-xs font-bold" style={{ backgroundColor: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.1)", color: "rgba(255,255,255,0.6)" }}>JSON</button>}
+        <button onClick={onRestart} className="flex items-center gap-1.5 rounded-xl px-3 py-1.5 text-xs font-bold" style={{ backgroundColor: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.1)", color: "rgba(255,255,255,0.6)" }}><RotateCcw className="h-3.5 w-3.5" /> New</button>
+      </div>
+    </div>
+  );
+
+  if (isBatch) {
+    return (
+      <div className="space-y-4">
+        {headerBar}
         <BatchResultsView batchId={batchId!} schemaName={schemaName} />
-      ) : (
-        <div className="rounded-2xl p-5" style={CARD}>
-          <ResultView result={singleResult} confidence={confidence} records={records} schemaFields={schemaFields} score={quality?.score ?? 0} failureLog={failureLog}
-            duration={(result as { duration_seconds?: number }).duration_seconds} provider={provider.provider} schemaName={schemaName} jobId={jobId}
-            coverage={quality?.breakdown?.coverage ? Math.round((quality.breakdown.coverage / 40) * 100) : undefined}
-            avgConfidence={quality?.breakdown?.avg_confidence ? Math.round((quality.breakdown.avg_confidence / 35) * 100) : undefined}
-            missingFields={quality?.missing_critical ?? []} suggestions={quality?.suggestions ?? []} />
+      </div>
+    );
+  }
+
+  // ── Single extraction: split-pane layout ──────────────────────────────────
+  return (
+    <div className="fixed inset-0 z-[50] flex flex-col" style={{ backgroundColor: "#060b18" }}>
+      {headerBar}
+
+      <div className="flex flex-1 overflow-hidden">
+        {/* Left: PDF viewer with highlight */}
+        <div className="flex flex-col w-1/2 border-r overflow-hidden" style={{ borderColor: "rgba(255,255,255,0.08)" }}>
+          {/* Active field indicator */}
+          {activeField && (
+            <div className="flex items-center gap-2 px-4 py-1.5 shrink-0" style={{ backgroundColor: "rgba(37,99,235,0.12)", borderBottom: "1px solid rgba(37,99,235,0.25)" }}>
+              <MapPin className="h-3 w-3" style={{ color: "#60a5fa" }} />
+              <span className="text-xs font-bold" style={{ color: "#93c5fd" }}>
+                Source of "{activeField}"
+                {highlights.length > 0 ? <span className="ml-2 text-yellow-400">● highlighted</span> : <span className="ml-2 opacity-50">— no bounding box</span>}
+              </span>
+              <button onClick={() => { setActiveField(null); setHighlights([]); }} className="ml-auto text-xs hover:text-white" style={{ color: "rgba(255,255,255,0.3)" }}>✕</button>
+            </div>
+          )}
+          {isPdf && fileUrl ? (
+            <PdfViewer
+              fileUrl={fileUrl}
+              pageNumber={pdfPage}
+              totalPages={pageCount}
+              onPageChange={setPdfPage}
+              highlights={highlights}
+            />
+          ) : (
+            <div className="flex-1 flex flex-col items-center justify-center gap-3" style={{ backgroundColor: "rgba(0,0,0,0.3)" }}>
+              <FileText className="h-16 w-16 opacity-20" style={{ color: "#60a5fa" }} />
+              <p className="text-sm font-bold" style={{ color: "rgba(255,255,255,0.3)" }}>
+                {fileUrl ? "Non-PDF document" : "Loading document…"}
+              </p>
+            </div>
+          )}
         </div>
-      )}
+
+        {/* Right: Extracted results */}
+        <div className="flex flex-col w-1/2 overflow-hidden">
+          {/* Hint banner */}
+          <div className="flex items-center gap-2 px-4 py-2 shrink-0" style={{ backgroundColor: "rgba(37,99,235,0.06)", borderBottom: "1px solid rgba(37,99,235,0.15)" }}>
+            <MapPin className="h-3 w-3 shrink-0" style={{ color: "#60a5fa" }} />
+            <span className="text-xs" style={{ color: "rgba(255,255,255,0.4)" }}>Click any field value to highlight its source in the PDF</span>
+          </div>
+
+          <div className="flex-1 overflow-auto p-4">
+            <ResultView
+              result={singleResult}
+              confidence={confidence}
+              sources={sources}
+              evidence={evidence}
+              documentId={documentId}
+              records={records}
+              schemaFields={schemaFields}
+              score={quality?.score ?? 0}
+              failureLog={failureLog}
+              duration={(result as { duration_seconds?: number }).duration_seconds}
+              provider={provider.provider}
+              schemaName={schemaName}
+              jobId={jobId}
+              coverage={quality?.breakdown?.coverage ? Math.round((quality.breakdown.coverage / 40) * 100) : undefined}
+              avgConfidence={quality?.breakdown?.avg_confidence ? Math.round((quality.breakdown.avg_confidence / 35) * 100) : undefined}
+              missingFields={quality?.missing_critical ?? []}
+              suggestions={quality?.suggestions ?? []}
+              onFieldClick={handleFieldClick}
+            />
+          </div>
+        </div>
+      </div>
     </div>
   );
 }
@@ -1138,7 +1305,7 @@ function ExtractionWizard() {
           {step === 3 && <Step3Engine provider={provider} setProvider={setProvider} multiRecord={multiRecord} setMultiRecord={setMultiRecord} visionParse={visionParse} setVisionParse={setVisionParse} smartRetry={smartRetry} setSmartRetry={setSmartRetry} retryThreshold={retryThreshold} setRetryThreshold={setRetryThreshold} onNext={() => { setErrorMsg(null); setStep(4); }} onBack={() => setStep(2)} />}
           {step === 4 && !errorMsg && <Step4Running key={runKey} mode={mode} singleDocId={singleDocId} batchDocIds={batchDocIds} zipFile={zipFile} schemaId={schemaId} provider={provider} multiRecord={multiRecord} visionParse={visionParse} onDone={handleDone} onError={handleError} />}
           {step === 4 && errorMsg && <ErrorState message={errorMsg} onRetry={() => { setErrorMsg(null); setRunKey(k => k + 1); }} onBack={() => { setErrorMsg(null); setStep(3); }} />}
-          {step === 5 && result && <Step5Results result={result} jobId={jobId} mode={mode} schemaId={schemaId} provider={provider} onRestart={restart} />}
+          {step === 5 && result && <Step5Results result={result} jobId={jobId} mode={mode} schemaId={schemaId} provider={provider} singleDocId={singleDocId} onRestart={restart} />}
         </div>
       </div>
     </AppShell>
