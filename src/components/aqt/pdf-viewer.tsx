@@ -1,8 +1,7 @@
 /**
  * pdf-viewer.tsx
  * Canvas-based PDF viewer using react-pdf with highlight overlay support.
- * Highlights are drawn as absolutely-positioned divs over the rendered page,
- * using normalized bounding box coordinates (0–1) from the parser's grounding data.
+ * Auto-scrolls to the highlighted region after render.
  */
 import { useState, useRef, useEffect, useCallback } from "react";
 import { Document, Page, pdfjs } from "react-pdf";
@@ -10,19 +9,16 @@ import "react-pdf/dist/Page/AnnotationLayer.css";
 import "react-pdf/dist/Page/TextLayer.css";
 import { ChevronLeft, ChevronRight, Loader2, FileText, ZoomIn, ZoomOut } from "lucide-react";
 
-// Use the bundled worker from pdfjs-dist
 pdfjs.GlobalWorkerOptions.workerSrc = new URL(
     "pdfjs-dist/build/pdf.worker.min.mjs",
     import.meta.url
 ).toString();
 
 export interface HighlightBox {
-    /** Normalized coords 0–1 */
     left: number;
     top: number;
     right: number;
     bottom: number;
-    /** Label shown in tooltip */
     label?: string;
     color?: "yellow" | "blue" | "green";
 }
@@ -33,7 +29,6 @@ interface PdfViewerProps {
     totalPages: number;
     onPageChange: (page: number) => void;
     highlights?: HighlightBox[];
-    /** Called when the rendered page dimensions change */
     onPageSize?: (width: number, height: number) => void;
 }
 
@@ -45,14 +40,18 @@ export function PdfViewer({
     highlights = [],
     onPageSize,
 }: PdfViewerProps) {
-    const containerRef = useRef<HTMLDivElement>(null);
+    const containerRef = useRef<HTMLDivElement>(null);   // the scrollable div
+    const pageWrapRef = useRef<HTMLDivElement>(null);    // the page+overlay wrapper
     const [containerWidth, setContainerWidth] = useState(600);
     const [pageHeight, setPageHeight] = useState(0);
     const [scale, setScale] = useState(1.0);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState(false);
 
-    // Measure container width on mount and resize
+    // Reset loading state when page or scale changes
+    useEffect(() => { setLoading(true); }, [pageNumber, scale]);
+
+    // Measure container width
     useEffect(() => {
         const measure = () => {
             if (containerRef.current) {
@@ -69,8 +68,6 @@ export function PdfViewer({
 
     const handlePageLoadSuccess = useCallback(
         ({ width, height }: { width: number; height: number }) => {
-            setLoading(false);
-            // react-pdf gives natural page size; actual rendered size = width * (containerWidth / width) * scale
             const rendered = containerWidth * scale;
             const renderedH = (height / width) * rendered;
             setPageHeight(renderedH);
@@ -79,10 +76,39 @@ export function PdfViewer({
         [containerWidth, scale, onPageSize]
     );
 
+    const handleRenderSuccess = useCallback(() => {
+        setLoading(false);
+    }, []);
+
+    // ── Auto-scroll to highlight after render ──────────────────────────────
+    // Runs whenever loading finishes, highlights change, or pageHeight updates.
+    useEffect(() => {
+        if (loading || pageHeight === 0 || highlights.length === 0) return;
+        if (!containerRef.current) return;
+
+        const h = highlights[0];
+        // Pixel Y of the top of the highlight box
+        const highlightTopPx = h.top * pageHeight;
+        // Pixel Y of the bottom of the highlight box
+        const highlightBottomPx = h.bottom * pageHeight;
+        // Height of the highlight region
+        const highlightMidPx = (highlightTopPx + highlightBottomPx) / 2;
+
+        // The page wrapper sits inside a flex-center container with p-3 (12px padding)
+        const containerPadding = 12;
+        // Scroll so the highlight center is vertically centered in the viewport
+        const scrollTarget = containerPadding + highlightMidPx - containerRef.current.clientHeight / 2;
+
+        containerRef.current.scrollTo({
+            top: Math.max(0, scrollTarget),
+            behavior: "smooth",
+        });
+    }, [loading, pageHeight, highlights]);
+
     const colorMap = {
-        yellow: { bg: "rgba(253,224,71,0.35)", border: "2px solid rgba(234,179,8,0.9)" },
-        blue: { bg: "rgba(59,130,246,0.25)", border: "2px solid rgba(59,130,246,0.9)" },
-        green: { bg: "rgba(34,197,94,0.25)", border: "2px solid rgba(34,197,94,0.9)" },
+        yellow: { bg: "rgba(253,224,71,0.35)", border: "2px solid rgba(234,179,8,0.95)" },
+        blue: { bg: "rgba(59,130,246,0.25)", border: "2px solid rgba(59,130,246,0.95)" },
+        green: { bg: "rgba(34,197,94,0.25)", border: "2px solid rgba(34,197,94,0.95)" },
     };
 
     return (
@@ -146,10 +172,18 @@ export function PdfViewer({
                 </a>
             </div>
 
-            {/* PDF canvas + overlay */}
-            <div ref={containerRef} className="flex-1 overflow-auto" style={{ backgroundColor: "rgba(0,0,0,0.4)" }}>
+            {/* Scrollable PDF canvas area */}
+            <div
+                ref={containerRef}
+                className="flex-1 overflow-auto"
+                style={{ backgroundColor: "rgba(0,0,0,0.4)" }}
+            >
                 <div className="flex items-start justify-center p-3">
-                    <div className="relative" style={{ width: renderedWidth, minHeight: pageHeight || 500 }}>
+                    <div
+                        ref={pageWrapRef}
+                        className="relative"
+                        style={{ width: renderedWidth, minHeight: pageHeight || 500 }}
+                    >
                         {/* Loading spinner */}
                         {loading && (
                             <div className="absolute inset-0 flex items-center justify-center z-10">
@@ -168,7 +202,7 @@ export function PdfViewer({
                                     pageNumber={pageNumber}
                                     width={renderedWidth}
                                     onLoadSuccess={handlePageLoadSuccess}
-                                    onRenderSuccess={() => setLoading(false)}
+                                    onRenderSuccess={handleRenderSuccess}
                                     renderTextLayer={true}
                                     renderAnnotationLayer={false}
                                 />
@@ -191,7 +225,7 @@ export function PdfViewer({
                             </div>
                         )}
 
-                        {/* Highlight overlay — rendered on top of the PDF canvas */}
+                        {/* Highlight overlay */}
                         {!loading && pageHeight > 0 && highlights.length > 0 && (
                             <div
                                 className="absolute inset-0 pointer-events-none"
@@ -211,11 +245,11 @@ export function PdfViewer({
                                                 left: x,
                                                 top: y,
                                                 width: Math.max(w, 20),
-                                                height: Math.max(ht, 12),
+                                                height: Math.max(ht, 14),
                                                 backgroundColor: c.bg,
                                                 border: c.border,
-                                                boxShadow: "0 0 8px rgba(253,224,71,0.5)",
-                                                animation: "pulse-highlight 1.5s ease-in-out 3",
+                                                boxShadow: "0 0 10px rgba(253,224,71,0.6)",
+                                                animation: "pulse-highlight 1.2s ease-in-out 4",
                                                 zIndex: 20,
                                             }}
                                             title={h.label}
@@ -228,13 +262,12 @@ export function PdfViewer({
                 </div>
             </div>
 
-            {/* Pulse animation keyframes injected once */}
             <style>{`
-        @keyframes pulse-highlight {
-          0%, 100% { opacity: 1; }
-          50% { opacity: 0.4; }
-        }
-      `}</style>
+                @keyframes pulse-highlight {
+                    0%, 100% { opacity: 1; }
+                    50%       { opacity: 0.3; }
+                }
+            `}</style>
         </div>
     );
 }
