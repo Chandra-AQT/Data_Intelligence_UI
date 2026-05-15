@@ -1063,7 +1063,12 @@ function Step5Results({ result, jobId, mode, schemaId, provider, singleDocId, on
   // When a field is clicked → find matching chunk → highlight + jump page
   const handleFieldClick = useCallback((fieldName: string, src: string, evid: string) => {
     setActiveField(fieldName);
-    if (!chunks.length) return;
+
+    // If parsed data not loaded yet, still show the field as active
+    if (!chunks.length) {
+      toast(`📍 Locating "${fieldName}" in document…`, { duration: 2000 });
+      return;
+    }
 
     let bestChunk: typeof chunks[0] | null = null;
     const evidLower = evid.toLowerCase();
@@ -1081,21 +1086,19 @@ function Step5Results({ result, jobId, mode, schemaId, provider, singleDocId, on
 
     // Strategy 2: search for the field value itself in chunks
     if (!bestChunk) {
-      // Get the actual extracted value for this field
+      // Get the actual extracted value — check both single result and multi-record
       const fieldVal = (() => {
-        const r = (result as { result?: Record<string, unknown> })?.result;
-        const rec = (result as { records?: Array<{ result: Record<string, unknown> }> })?.records?.[0]?.result;
+        const r = singleResult;
+        const rec = records?.[0]?.result;
         const v = r?.[fieldName] ?? rec?.[fieldName];
         return v != null ? String(v).toLowerCase().trim() : "";
       })();
 
       if (fieldVal.length > 2) {
-        // Try to find a chunk containing the field value
         for (const chunk of chunks) {
           const plain = chunk.markdown.replace(/<[^>]+>/g, "").replace(/&[^;]+;/g, " ").toLowerCase();
           if (plain.includes(fieldVal)) { bestChunk = chunk; break; }
         }
-        // Also try partial match (first 20 chars of value)
         if (!bestChunk && fieldVal.length > 5) {
           const partial = fieldVal.slice(0, 20);
           for (const chunk of chunks) {
@@ -1111,8 +1114,7 @@ function Step5Results({ result, jobId, mode, schemaId, provider, singleDocId, on
       const typed = src === "table"
         ? chunks.filter(c => c.type === "table")
         : chunks.filter(c => c.type === "text" || c.type === "title");
-      // Prefer one that has a grounding box
-      bestChunk = typed.find(c => c.grounding?.box) ?? typed[0] ?? null;
+      bestChunk = typed.find(c => c.grounding?.box) ?? typed[0] ?? chunks.find(c => c.grounding?.box) ?? chunks[0] ?? null;
     }
 
     if (bestChunk) {
@@ -1121,16 +1123,37 @@ function Step5Results({ result, jobId, mode, schemaId, provider, singleDocId, on
       if (bestChunk.grounding?.box) {
         const box = bestChunk.grounding.box;
         setHighlights([{
-          left: box.left, top: box.top, right: box.right, bottom: box.bottom,
+          left: box.left,
+          top: box.top,
+          right: box.right,
+          bottom: box.bottom,
           label: `Source of "${fieldName}"`,
           color: bestChunk.type === "table" ? "green" : "yellow",
         }]);
+        toast.success(`📍 Highlighted "${fieldName}" on page ${page}`, { duration: 2000 });
       } else {
-        // No box available — still navigate to the page
-        setHighlights([]);
+        // No bounding box — highlight a wide band at the estimated vertical position
+        // Use chunk index to estimate vertical position on the page
+        const chunkIdx = chunks.indexOf(bestChunk);
+        const chunksOnPage = chunks.filter(c => (chunkPageMap[c.id] ?? 1) === (chunkPageMap[bestChunk!.id] ?? 1));
+        const posInPage = chunksOnPage.indexOf(bestChunk);
+        const totalOnPage = Math.max(chunksOnPage.length, 1);
+        const estimatedTop = posInPage / totalOnPage;
+        const estimatedBottom = (posInPage + 1) / totalOnPage;
+        setHighlights([{
+          left: 0.02,
+          top: Math.max(0, estimatedTop - 0.02),
+          right: 0.98,
+          bottom: Math.min(1, estimatedBottom + 0.02),
+          label: `Source of "${fieldName}" (estimated)`,
+          color: bestChunk.type === "table" ? "green" : "yellow",
+        }]);
+        toast(`📍 Navigated to page ${page} for "${fieldName}"`, { duration: 2000 });
       }
+    } else {
+      toast(`Could not locate "${fieldName}" in document`, { duration: 2000 });
     }
-  }, [chunks, chunkPageMap, result]);
+  }, [chunks, chunkPageMap, singleResult, records]);
 
   const handleExport = async (type: "excel" | "csv" | "json") => {
     try {

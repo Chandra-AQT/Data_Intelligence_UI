@@ -175,29 +175,31 @@ function FieldGrid({
                 const src = sources[fname] ?? "";
                 const evid = evidence[fname] ?? "";
                 const hasSource = !!src && src !== "fallback";
-                const isAiSource = src.startsWith("ai:");
-                const sourceLabel = isAiSource ? "AI" : src === "table" ? "Table" : src === "kv" ? "KV" : src === "chunk" ? "Chunk" : src === "text" ? "Text" : src;
+                // Always allow clicking when onFieldClick is provided — even if sources haven't loaded yet
+                const isClickable = !!onFieldClick;
+                const isAiSource = src.startsWith("ai:") || src === "landingai_ade";
+                const sourceLabel = isAiSource ? "AI" : src === "table" ? "Table" : src === "kv" ? "KV" : src === "chunk" ? "Chunk" : src === "text" ? "Text" : src === "landingai_ade" ? "AI" : src || (onFieldClick ? "·" : "");
 
                 return (
                     <div
                         key={fname}
-                        className={`flex items-start justify-between rounded-lg px-3 py-2 transition-colors ${isArray ? "sm:col-span-2" : ""} ${hasSource && onFieldClick ? "cursor-pointer" : ""}`}
+                        className={`flex items-start justify-between rounded-lg px-3 py-2 transition-colors ${isArray ? "sm:col-span-2" : ""} ${isClickable ? "cursor-pointer" : ""}`}
                         style={{ backgroundColor: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.06)" }}
-                        onMouseEnter={e => (e.currentTarget.style.backgroundColor = hasSource && onFieldClick ? "rgba(37,99,235,0.08)" : "rgba(255,255,255,0.06)")}
+                        onMouseEnter={e => (e.currentTarget.style.backgroundColor = isClickable ? "rgba(37,99,235,0.08)" : "rgba(255,255,255,0.06)")}
                         onMouseLeave={e => (e.currentTarget.style.backgroundColor = "rgba(255,255,255,0.03)")}
-                        onClick={() => hasSource && onFieldClick && onFieldClick(fname, src, evid)}
-                        title={hasSource && onFieldClick ? `Source: ${src}${evid ? ` — ${evid.slice(0, 80)}` : ""}` : undefined}
+                        onClick={() => isClickable && onFieldClick && onFieldClick(fname, src, evid)}
+                        title={isClickable ? `Click to highlight "${fname}" in PDF` : undefined}
                     >
                         <div className="min-w-0 flex-1">
                             <div className="flex items-center gap-1.5 flex-wrap">
                                 <p className="text-xs font-medium" style={{ color: "rgba(255,255,255,0.4)" }}>{fname}</p>
-                                {hasSource && (
+                                {(hasSource || isClickable) && sourceLabel && (
                                     <span className="flex items-center gap-0.5 text-[10px] font-bold rounded px-1 py-0.5"
                                         style={{
                                             backgroundColor: isAiSource ? "rgba(124,58,237,0.15)" : "rgba(37,99,235,0.12)",
                                             color: isAiSource ? "#a78bfa" : "#60a5fa",
                                         }}>
-                                        {onFieldClick && <MapPin className="h-2 w-2" />}
+                                        {isClickable && <MapPin className="h-2 w-2" />}
                                         {sourceLabel}
                                     </span>
                                 )}
@@ -213,8 +215,7 @@ function FieldGrid({
                                     <span style={{ color: "rgba(255,255,255,0.9)" }}>{String(val)}</span>
                                 )}
                             </div>
-                            {/* Evidence tooltip on hover */}
-                            {evid && hasSource && onFieldClick && (
+                            {evid && hasSource && isClickable && (
                                 <p className="text-[10px] mt-1 truncate" style={{ color: "rgba(255,255,255,0.25)" }}>
                                     {evid.slice(0, 100)}
                                 </p>
@@ -222,7 +223,7 @@ function FieldGrid({
                         </div>
                         <div className="flex items-center gap-1 shrink-0 ml-2">
                             {!isArray && <ConfidenceBadge value={isNull ? null : conf} />}
-                            {hasSource && onFieldClick && (
+                            {isClickable && (
                                 <ExternalLink className="h-3 w-3 opacity-40 hover:opacity-100 transition-opacity" style={{ color: "#60a5fa" }} />
                             )}
                         </div>
