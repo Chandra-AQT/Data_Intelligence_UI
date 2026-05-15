@@ -26,7 +26,7 @@ export const engineBadges = ["Landing AI ADE", "OpenAI GPT-4o", "Anthropic Claud
 
 export const api = axios.create({
   baseURL: API_BASE_URL,
-  timeout: 60000, // 60s — Render free tier cold start can take 30-50s
+  timeout: 300000, // 5 min — LandingAI and large PDFs can take 2-3 min on Railway
 });
 
 api.interceptors.request.use((config) => {

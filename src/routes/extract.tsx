@@ -791,9 +791,13 @@ function Step4Running({ mode, singleDocId, batchDocIds, zipFile, schemaId, provi
 
   useEffect(() => {
     if (mode === "single") {
-      api.post("/extraction/run", { document_id: singleDocId, schema_id: schemaId, provider_config: provider, options: { multi_record: multiRecord, vision_parse: visionParse } })
+      api.post("/extraction/run", { document_id: singleDocId, schema_id: schemaId, provider_config: provider, options: { multi_record: multiRecord, vision_parse: visionParse } }, { timeout: 300000 })
         .then(res => onDone(res.data, res.data.job_id))
-        .catch(err => onError(err.response?.data?.detail ?? "Extraction failed"));
+        .catch(err => {
+          const detail = err.response?.data?.detail ?? err.response?.data?.message ?? err.message ?? "Extraction failed";
+          const status = err.response?.status;
+          onError(status ? `[${status}] ${detail}` : detail);
+        });
     } else if (mode === "batch") {
       if (!batchDocIds || batchDocIds.length === 0) {
         onError("No documents selected for batch extraction");
@@ -808,9 +812,12 @@ function Step4Running({ mode, singleDocId, batchDocIds, zipFile, schemaId, provi
         model: provider.model,
         multi_record: multiRecord,
         vision_parse: visionParse,
-      })
+      }, { timeout: 300000 })
         .then(res => startPoll(res.data.batch_id))
-        .catch(err => onError(err.response?.data?.detail ?? "Batch failed"));
+        .catch(err => {
+          const detail = err.response?.data?.detail ?? err.message ?? "Batch failed";
+          onError(detail);
+        });
     } else if (mode === "zip" && zipFile) {
       const fd = new FormData();
       fd.append("file", zipFile);
@@ -820,9 +827,12 @@ function Step4Running({ mode, singleDocId, batchDocIds, zipFile, schemaId, provi
       fd.append("base_url", provider.base_url || "");
       fd.append("model", provider.model || "");
       fd.append("multi_record", String(multiRecord));
-      api.post("/batch/run-from-zip", fd)
+      api.post("/batch/run-from-zip", fd, { timeout: 300000 })
         .then(res => startPoll(res.data.batch_id))
-        .catch(err => onError(err.response?.data?.detail ?? "ZIP batch failed"));
+        .catch(err => {
+          const detail = err.response?.data?.detail ?? err.message ?? "ZIP batch failed";
+          onError(detail);
+        });
     }
     return () => { if (pollRef.current) clearInterval(pollRef.current); };
   }, []);
