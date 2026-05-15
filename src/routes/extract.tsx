@@ -1068,21 +1068,51 @@ function Step5Results({ result, jobId, mode, schemaId, provider, singleDocId, on
     let bestChunk: typeof chunks[0] | null = null;
     const evidLower = evid.toLowerCase();
 
-    // Try evidence text match
-    if (evidLower.length > 5) {
+    // Strategy 1: match by evidence text (from heuristic extractor)
+    if (evidLower.length > 5 && !evidLower.startsWith("landingai") && !evidLower.startsWith("ai (")) {
       const keys = [evidLower.slice(0, 120), evidLower.slice(0, 60), evidLower.slice(0, 30)].filter(k => k.trim().length > 5);
-      outer: for (const key of keys) {
+      outer1: for (const key of keys) {
         for (const chunk of chunks) {
           const plain = chunk.markdown.replace(/<[^>]+>/g, "").replace(/&[^;]+;/g, " ").toLowerCase();
-          if (plain.includes(key.trim())) { bestChunk = chunk; break outer; }
+          if (plain.includes(key.trim())) { bestChunk = chunk; break outer1; }
         }
       }
     }
-    // Fallback by source type
+
+    // Strategy 2: search for the field value itself in chunks
     if (!bestChunk) {
-      bestChunk = src === "table"
-        ? chunks.find(c => c.type === "table") ?? null
-        : chunks.find(c => c.type === "text" || c.type === "title") ?? null;
+      // Get the actual extracted value for this field
+      const fieldVal = (() => {
+        const r = (result as { result?: Record<string, unknown> })?.result;
+        const rec = (result as { records?: Array<{ result: Record<string, unknown> }> })?.records?.[0]?.result;
+        const v = r?.[fieldName] ?? rec?.[fieldName];
+        return v != null ? String(v).toLowerCase().trim() : "";
+      })();
+
+      if (fieldVal.length > 2) {
+        // Try to find a chunk containing the field value
+        for (const chunk of chunks) {
+          const plain = chunk.markdown.replace(/<[^>]+>/g, "").replace(/&[^;]+;/g, " ").toLowerCase();
+          if (plain.includes(fieldVal)) { bestChunk = chunk; break; }
+        }
+        // Also try partial match (first 20 chars of value)
+        if (!bestChunk && fieldVal.length > 5) {
+          const partial = fieldVal.slice(0, 20);
+          for (const chunk of chunks) {
+            const plain = chunk.markdown.replace(/<[^>]+>/g, "").replace(/&[^;]+;/g, " ").toLowerCase();
+            if (plain.includes(partial)) { bestChunk = chunk; break; }
+          }
+        }
+      }
+    }
+
+    // Strategy 3: fallback by source type — prefer chunks WITH a bounding box
+    if (!bestChunk) {
+      const typed = src === "table"
+        ? chunks.filter(c => c.type === "table")
+        : chunks.filter(c => c.type === "text" || c.type === "title");
+      // Prefer one that has a grounding box
+      bestChunk = typed.find(c => c.grounding?.box) ?? typed[0] ?? null;
     }
 
     if (bestChunk) {
@@ -1096,10 +1126,11 @@ function Step5Results({ result, jobId, mode, schemaId, provider, singleDocId, on
           color: bestChunk.type === "table" ? "green" : "yellow",
         }]);
       } else {
+        // No box available — still navigate to the page
         setHighlights([]);
       }
     }
-  }, [chunks, chunkPageMap]);
+  }, [chunks, chunkPageMap, result]);
 
   const handleExport = async (type: "excel" | "csv" | "json") => {
     try {
