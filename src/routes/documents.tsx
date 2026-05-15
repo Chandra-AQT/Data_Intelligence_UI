@@ -13,6 +13,7 @@ import { pushNotification } from "@/components/aqt/app-shell";
 import { StatusBadge, GradeBadge } from "@/components/aqt/badges";
 import { Button } from "@/components/ui/button";
 import { api, downloadBlob } from "@/lib/aqt";
+import { PdfViewer, type HighlightBox } from "@/components/aqt/pdf-viewer";
 
 export const Route = createFileRoute("/documents")({ component: Documents });
 
@@ -108,7 +109,6 @@ function DocViewerPanel({ doc, onClose, allJobs, highlightField, highlightSource
     if (node) chunkRefMap.current[id] = node;
   }, []);
   const chunkRefMap = useRef<Record<string, HTMLDivElement>>({});
-  const pdfIframeRef = useRef<HTMLIFrameElement>(null);
 
   const { data: parsedData, isLoading: parsedLoading } = useQuery({
     queryKey: ["doc-parsed", doc.id],
@@ -218,29 +218,31 @@ function DocViewerPanel({ doc, onClose, allJobs, highlightField, highlightSource
 
   const isPdf = /\.pdf$/i.test(doc.file_name);
   const isImage = /\.(png|jpg|jpeg|webp|gif|bmp|tiff|heic)$/i.test(doc.file_name);
-  // file_path is like "./uploads/uuid.pdf" or "uploads/uuid.pdf" — extract just the filename
   const fileBasename = doc.file_path ? doc.file_path.replace(/\\/g, "/").split("/").pop() : null;
   const BACKEND = (import.meta as { env?: { VITE_API_BASE?: string } }).env?.VITE_API_BASE?.replace(/\/api\/v1\/?$/, "") ?? "http://127.0.0.1:8000";
   const fileUrl = fileBasename ? `${BACKEND}/uploads/${fileBasename}` : null;
 
-  // Track which page the PDF iframe is currently showing so we can force a reload when page changes
-  const [pdfPage, setPdfPage] = useState(currentPage);
-
-  // When currentPage changes (via page nav buttons), sync pdfPage
-  useEffect(() => { setPdfPage(currentPage); }, [currentPage]);
+  // Build highlight boxes for the selected chunk
+  const highlights = useMemo((): HighlightBox[] => {
+    if (!selectedChunkId) return [];
+    const sel = chunks.find(c => c.id === selectedChunkId);
+    if (!sel?.grounding?.box) return [];
+    const box = sel.grounding.box;
+    return [{
+      left: box.left,
+      top: box.top,
+      right: box.right,
+      bottom: box.bottom,
+      label: highlightInfo ? `Source of "${highlightInfo.field}"` : `${sel.type} chunk`,
+      color: sel.type === "table" ? "green" : "yellow",
+    }];
+  }, [selectedChunkId, chunks, highlightInfo]);
 
   // Click a chunk → jump PDF to that chunk's page and highlight the chunk
   const handleChunkClick = (chunk: Chunk) => {
     const chunkPage = getChunkPage(chunk);
     setSelectedChunkId(chunk.id);
-    if (chunkPage !== currentPage) {
-      setCurrentPage(chunkPage);
-      setPdfPage(chunkPage);
-    } else {
-      // Force iframe reload to the same page (re-set src)
-      setPdfPage(0);
-      setTimeout(() => setPdfPage(chunkPage), 50);
-    }
+    setCurrentPage(chunkPage);
   };
 
   const handleExport = async (jobId: string, type: "excel" | "csv") => {
@@ -273,63 +275,48 @@ function DocViewerPanel({ doc, onClose, allJobs, highlightField, highlightSource
       {/* Split pane */}
       <div className="flex flex-1 overflow-hidden">
         {/* Left: Document preview */}
-        <div className="flex flex-col w-1/2 border-r" style={{ borderColor: "rgba(255,255,255,0.08)" }}>
-          {pageCount > 1 && (
-            <div className="flex items-center justify-center gap-3 py-2 shrink-0" style={{ backgroundColor: "rgba(255,255,255,0.02)", borderBottom: "1px solid rgba(255,255,255,0.06)" }}>
-              <button onClick={() => setCurrentPage((p) => Math.max(1, p - 1))} disabled={currentPage <= 1} className="p-1 rounded-lg hover:bg-white/10 disabled:opacity-30"><ChevronLeft className="h-4 w-4 text-white" /></button>
-              <span className="text-xs font-bold" style={{ color: "rgba(255,255,255,0.5)" }}>{currentPage} / {pageCount}</span>
-              <button onClick={() => setCurrentPage((p) => Math.min(pageCount, p + 1))} disabled={currentPage >= pageCount} className="p-1 rounded-lg hover:bg-white/10 disabled:opacity-30"><ChevronRight className="h-4 w-4 text-white" /></button>
-            </div>
-          )}
+        <div className="flex flex-col w-1/2 border-r overflow-hidden" style={{ borderColor: "rgba(255,255,255,0.08)" }}>
           {/* Selected chunk source indicator */}
           {selectedChunkId && (() => {
             const sel = chunks.find(c => c.id === selectedChunkId);
             if (!sel) return null;
             const pg = getChunkPage(sel);
+            const hasBox = !!sel.grounding?.box;
             return (
               <div className="flex items-center gap-2 px-4 py-1.5 shrink-0" style={{ backgroundColor: "rgba(37,99,235,0.12)", borderBottom: "1px solid rgba(37,99,235,0.25)" }}>
                 <MapPin className="h-3 w-3" style={{ color: "#60a5fa" }} />
                 <span className="text-xs font-bold" style={{ color: "#93c5fd" }}>
                   {highlightInfo
                     ? `Source of "${highlightInfo.field}" · ${sel.type} · page ${pg}`
-                    : `Showing source: chunk ${sel.type} · page ${pg}`}
+                    : `Showing source: ${sel.type} · page ${pg}`}
+                  {hasBox && <span className="ml-2 text-yellow-400">● highlighted</span>}
                 </span>
                 <button onClick={() => { setSelectedChunkId(null); setHighlightInfo(null); }} className="ml-auto text-xs hover:text-white transition-colors" style={{ color: "rgba(255,255,255,0.3)" }}>✕</button>
               </div>
             );
           })()}
-          <div className="flex-1 overflow-auto flex items-start justify-center p-4" style={{ backgroundColor: "rgba(0,0,0,0.3)" }}>
-            {isPdf && fileUrl ? (
-              <div className="w-full h-full flex flex-col gap-2" style={{ minHeight: "500px" }}>
-                <div className="flex items-center justify-between px-1">
-                  <span className="text-xs" style={{ color: "rgba(255,255,255,0.3)" }}>PDF Preview</span>
-                  <a href={fileUrl} target="_blank" rel="noopener noreferrer" className="text-xs underline" style={{ color: "#60a5fa" }}>
-                    Open in new tab ↗
-                  </a>
-                </div>
-                {pdfPage > 0 && (
-                  <iframe
-                    ref={pdfIframeRef}
-                    key={`pdf-${pdfPage}`}
-                    src={`${fileUrl}#page=${pdfPage}&toolbar=1&navpanes=0`}
-                    className="w-full flex-1 rounded-lg"
-                    style={{ minHeight: "480px", border: selectedChunkId ? "2px solid #3b82f6" : "1px solid rgba(255,255,255,0.1)", transition: "border 0.2s" }}
-                    title="PDF Preview"
-                  />
-                )}
-              </div>
-            ) : isImage && fileUrl ? (
-              <img src={fileUrl} alt={doc.file_name} className="max-w-full rounded-lg shadow-xl" style={{ border: "1px solid rgba(255,255,255,0.1)" }} />
-            ) : (
-              <div className="flex flex-col items-center justify-center h-64 text-center">
-                <FileText className="h-16 w-16 mb-3 opacity-20" style={{ color: "#60a5fa" }} />
-                <p className="text-sm font-bold" style={{ color: "rgba(255,255,255,0.3)" }}>Preview not available</p>
-                <p className="text-xs mt-1" style={{ color: "rgba(255,255,255,0.2)" }}>Parsed content is shown on the right</p>
-              </div>
-            )}
-          </div>
-        </div>
 
+          {isPdf && fileUrl ? (
+            <PdfViewer
+              fileUrl={fileUrl}
+              pageNumber={currentPage}
+              totalPages={pageCount}
+              onPageChange={setCurrentPage}
+              highlights={highlights}
+            />
+          ) : isImage && fileUrl ? (
+            <div className="flex-1 overflow-auto flex items-start justify-center p-4" style={{ backgroundColor: "rgba(0,0,0,0.3)" }}>
+              <img src={fileUrl} alt={doc.file_name} className="max-w-full rounded-lg shadow-xl" style={{ border: "1px solid rgba(255,255,255,0.1)" }} />
+            </div>
+          ) : (
+            <div className="flex-1 flex flex-col items-center justify-center h-64 text-center" style={{ backgroundColor: "rgba(0,0,0,0.3)" }}>
+              <FileText className="h-16 w-16 mb-3 opacity-20" style={{ color: "#60a5fa" }} />
+              <p className="text-sm font-bold" style={{ color: "rgba(255,255,255,0.3)" }}>Preview not available</p>
+              <p className="text-xs mt-1" style={{ color: "rgba(255,255,255,0.2)" }}>Parsed content is shown on the right</p>
+            </div>
+          )}
+
+        </div>
         {/* Right: Parsed content + extraction history */}
         <div className="flex flex-col w-1/2 overflow-hidden">
           {/* Tabs */}
