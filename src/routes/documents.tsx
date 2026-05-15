@@ -1,4 +1,4 @@
-import { useCallback, useState, useEffect, useRef } from "react";
+import { useCallback, useState, useEffect, useRef, useMemo } from "react";
 import { createFileRoute, Link, useRouterState } from "@tanstack/react-router";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useDropzone } from "react-dropzone";
@@ -17,7 +17,9 @@ import { api, downloadBlob } from "@/lib/aqt";
 export const Route = createFileRoute("/documents")({ component: Documents });
 
 type DocMeta = { id: string; file_name: string; status: string; page_count: number; file_size: number; chunk_count: number; table_count: number; created_at: string; file_path?: string };
-type Chunk = { id: string; type: string; markdown: string; grounding?: { page: number } };
+type Chunk = { id: string; type: string; markdown: string; grounding?: { page: number; box?: { left: number; top: number; right: number; bottom: number } } };
+type Split = { class: string; identifier: string; pages: number[]; chunks: string[] };
+type LayoutBlock = { page: number; type: string; bbox: number[]; text: string; chunk_id: string };
 type ExtractionJob = { job_id: string; schema_name: string; provider: string; status: string; created_at: string; document_id?: string; result?: { quality?: { score?: number } } };
 
 // ── Copy ID helper ────────────────────────────────────────────────────────────
@@ -117,10 +119,58 @@ function DocViewerPanel({ doc, onClose, allJobs, highlightField, highlightSource
   const chunks: Chunk[] = (parsedData as { chunks?: Chunk[] })?.chunks ?? [];
   const markdown: string = (parsedData as { markdown?: string })?.markdown ?? "";
   const tables = (parsedData as { tables?: Array<{ headers: string[]; rows: string[][] }> })?.tables ?? [];
+  const splits: Split[] = (parsedData as { splits?: Split[] })?.splits ?? [];
+  const layoutBlocks: LayoutBlock[] = (parsedData as { layout_blocks?: LayoutBlock[] })?.layout_blocks ?? [];
   const pageCount = doc.page_count || 1;
 
-  const pageChunks = chunks.filter((c) => (c.grounding?.page ?? 0) === currentPage - 1);
-  const displayChunks = pageChunks.length > 0 ? pageChunks : chunks.slice(0, 40);
+  // Build a reliable chunk→page map using multiple sources:
+  // 1. grounding.page (0-indexed) from the chunk itself
+  // 2. splits array: each split has pages[] and chunks[] (chunk ids)
+  // 3. layout_blocks: each block has page (1-indexed) and chunk_id
+  const chunkPageMap = useMemo(() => {
+    const map: Record<string, number> = {};
+
+    // Source 1: grounding.page (0-indexed → convert to 1-indexed)
+    for (const chunk of chunks) {
+      if (chunk.grounding?.page !== undefined) {
+        map[chunk.id] = chunk.grounding.page + 1;
+      }
+    }
+
+    // Source 2: splits (pages[] is 0-indexed)
+    for (const split of splits) {
+      const pg = (split.pages?.[0] ?? 0) + 1;
+      for (const cid of split.chunks ?? []) {
+        if (!map[cid]) map[cid] = pg;
+      }
+    }
+
+    // Source 3: layout_blocks (page is already 1-indexed)
+    for (const block of layoutBlocks) {
+      if (block.chunk_id && !map[block.chunk_id]) {
+        map[block.chunk_id] = block.page;
+      }
+    }
+
+    // Fallback: if all chunks map to page 1 but we have multiple pages,
+    // distribute chunks evenly across pages based on their order
+    const uniquePages = new Set(Object.values(map));
+    if (uniquePages.size === 1 && pageCount > 1 && chunks.length > 0) {
+      const chunksPerPage = Math.ceil(chunks.length / pageCount);
+      chunks.forEach((chunk, idx) => {
+        map[chunk.id] = Math.min(Math.floor(idx / chunksPerPage) + 1, pageCount);
+      });
+    }
+
+    return map;
+  }, [chunks, splits, layoutBlocks, pageCount]);
+
+  // Helper: get page for a chunk (1-indexed)
+  const getChunkPage = (chunk: Chunk): number => chunkPageMap[chunk.id] ?? 1;
+
+  const pageChunks = chunks.filter((c) => getChunkPage(c) === currentPage);
+  // Always show ALL chunks in the right panel so we can highlight any of them.
+  const displayChunks = chunks.length > 0 ? chunks : [];
 
   // Auto-select chunk matching the highlight evidence when navigated from extraction results
   useEffect(() => {
@@ -128,26 +178,28 @@ function DocViewerPanel({ doc, onClose, allJobs, highlightField, highlightSource
     const evid = highlightInfo.evidence.toLowerCase();
     const src = highlightInfo.source;
 
-    // Find the best matching chunk: prefer one whose text contains the evidence snippet
     let bestChunk: Chunk | null = null;
 
     if (evid) {
-      // Try to find a chunk whose markdown contains the evidence text
-      for (const chunk of chunks) {
-        const plain = chunk.markdown.replace(/<[^>]+>/g, "").replace(/&[^;]+;/g, " ").toLowerCase();
-        // Use first 80 chars of evidence as search key
-        const key = evid.slice(0, 80).trim();
-        if (key && plain.includes(key)) {
-          bestChunk = chunk;
-          break;
+      // Try progressively shorter prefixes of the evidence string for a match
+      const keys = [evid.slice(0, 120), evid.slice(0, 60), evid.slice(0, 30)].filter(k => k.trim().length > 5);
+      outer: for (const key of keys) {
+        for (const chunk of chunks) {
+          const plain = chunk.markdown.replace(/<[^>]+>/g, "").replace(/&[^;]+;/g, " ").toLowerCase();
+          if (plain.includes(key.trim())) {
+            bestChunk = chunk;
+            break outer;
+          }
         }
       }
     }
 
-    // Fallback: if source is "table", pick first table chunk; if "kv"/"text"/"chunk", pick first text chunk
+    // Fallback by source type
     if (!bestChunk) {
       if (src === "table") {
         bestChunk = chunks.find(c => c.type === "table") ?? null;
+      } else if (src === "kv") {
+        bestChunk = chunks.find(c => c.type === "key_value" || c.type === "kv") ?? chunks.find(c => c.type === "text") ?? null;
       } else {
         bestChunk = chunks.find(c => c.type === "text" || c.type === "title") ?? null;
       }
@@ -155,14 +207,14 @@ function DocViewerPanel({ doc, onClose, allJobs, highlightField, highlightSource
 
     if (bestChunk) {
       handleChunkClick(bestChunk);
-      // Scroll the chunk into view after a short delay
+      // Scroll the chunk into view after the page navigation settles
       setTimeout(() => {
         const node = chunkRefMap.current[bestChunk!.id];
         if (node) node.scrollIntoView({ behavior: "smooth", block: "center" });
-      }, 300);
+      }, 400);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [chunks.length, highlightInfo]);
+  }, [chunks.length, highlightInfo, Object.keys(chunkPageMap).length]);
 
   const isPdf = /\.pdf$/i.test(doc.file_name);
   const isImage = /\.(png|jpg|jpeg|webp|gif|bmp|tiff|heic)$/i.test(doc.file_name);
@@ -179,7 +231,7 @@ function DocViewerPanel({ doc, onClose, allJobs, highlightField, highlightSource
 
   // Click a chunk → jump PDF to that chunk's page and highlight the chunk
   const handleChunkClick = (chunk: Chunk) => {
-    const chunkPage = (chunk.grounding?.page ?? 0) + 1; // grounding.page is 0-indexed
+    const chunkPage = getChunkPage(chunk);
     setSelectedChunkId(chunk.id);
     if (chunkPage !== currentPage) {
       setCurrentPage(chunkPage);
@@ -233,7 +285,7 @@ function DocViewerPanel({ doc, onClose, allJobs, highlightField, highlightSource
           {selectedChunkId && (() => {
             const sel = chunks.find(c => c.id === selectedChunkId);
             if (!sel) return null;
-            const pg = (sel.grounding?.page ?? 0) + 1;
+            const pg = getChunkPage(sel);
             return (
               <div className="flex items-center gap-2 px-4 py-1.5 shrink-0" style={{ backgroundColor: "rgba(37,99,235,0.12)", borderBottom: "1px solid rgba(37,99,235,0.25)" }}>
                 <MapPin className="h-3 w-3" style={{ color: "#60a5fa" }} />
@@ -320,7 +372,8 @@ function DocViewerPanel({ doc, onClose, allJobs, highlightField, highlightSource
                 )}
                 {displayChunks.length > 0 ? displayChunks.map((chunk, i) => {
                   const isSelected = selectedChunkId === chunk.id;
-                  const chunkPage = (chunk.grounding?.page ?? 0) + 1;
+                  const chunkPage = getChunkPage(chunk);
+                  const isCurrentPage = chunkPage === currentPage;
                   return (
                     <div
                       key={chunk.id ?? i}
@@ -331,6 +384,7 @@ function DocViewerPanel({ doc, onClose, allJobs, highlightField, highlightSource
                         outline: isSelected ? "2px solid #3b82f6" : "2px solid transparent",
                         outlineOffset: "2px",
                         backgroundColor: isSelected ? "rgba(37,99,235,0.08)" : "transparent",
+                        opacity: isSelected ? 1 : isCurrentPage ? 1 : 0.5,
                       }}
                       title={`Click to jump to page ${chunkPage} in PDF`}
                     >
@@ -342,8 +396,8 @@ function DocViewerPanel({ doc, onClose, allJobs, highlightField, highlightSource
                         <span
                           className="ml-auto flex items-center gap-1 rounded-md px-1.5 py-0.5 text-xs font-bold"
                           style={{
-                            backgroundColor: isSelected ? "rgba(37,99,235,0.25)" : "rgba(255,255,255,0.05)",
-                            color: isSelected ? "#93c5fd" : "rgba(255,255,255,0.3)",
+                            backgroundColor: isSelected ? "rgba(37,99,235,0.25)" : isCurrentPage ? "rgba(255,255,255,0.07)" : "rgba(255,255,255,0.03)",
+                            color: isSelected ? "#93c5fd" : isCurrentPage ? "rgba(255,255,255,0.5)" : "rgba(255,255,255,0.2)",
                             border: isSelected ? "1px solid rgba(59,130,246,0.4)" : "1px solid rgba(255,255,255,0.06)",
                           }}
                         >
