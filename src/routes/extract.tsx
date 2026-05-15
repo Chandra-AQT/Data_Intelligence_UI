@@ -17,7 +17,12 @@ import { Button } from "@/components/ui/button";
 import { api, downloadBlob, storedKey } from "@/lib/aqt";
 import { PdfViewerLazy as PdfViewer, type HighlightBox } from "@/components/aqt/pdf-viewer-lazy";
 
-export const Route = createFileRoute("/extract")({ component: ExtractionWizard });
+export const Route = createFileRoute("/extract")({
+  component: ExtractionWizard,
+  validateSearch: (search: Record<string, unknown>) => ({
+    doc: typeof search.doc === "string" ? search.doc : undefined,
+  }),
+});
 
 // ── PDF Error Boundary — prevents PDF crashes from killing the whole page ─────
 class PdfErrorBoundary extends Component<{ children: ReactNode; fallback?: ReactNode }, { hasError: boolean }> {
@@ -1328,9 +1333,10 @@ function ErrorState({ message, onRetry, onBack }: { message: string; onRetry: ()
 
 //  Main Wizard 
 function ExtractionWizard() {
+  const { doc: docParam } = Route.useSearch();
   const [step, setStep] = useState(1);
   const [mode, setMode] = useState<UploadMode>("single");
-  const [singleDocId, setSingleDocId] = useState("");
+  const [singleDocId, setSingleDocId] = useState(docParam ?? "");
   const [batchDocIds, setBatchDocIds] = useState<string[]>([]);
   const [zipFile, setZipFile] = useState<File | null>(null);
   const [schemaId, setSchemaId] = useState("");
