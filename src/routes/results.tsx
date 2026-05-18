@@ -362,16 +362,18 @@ function BatchRow({ batch, allJobs }: { batch: Batch; allJobs: Job[] }) {
 function Results() {
     const [mainTab, setMainTab] = useState<"single" | "batch">("batch");
 
-    const { data: jobsData, isLoading: jobsLoading } = useQuery({
+    const { data: jobsData, isLoading: jobsLoading, isError: jobsError } = useQuery({
         queryKey: ["jobs"],
         queryFn: () => api.get("/jobs").then(r => r.data.jobs ?? []),
         refetchInterval: 5000,
+        retry: 1,
     });
 
-    const { data: batchesData } = useQuery({
+    const { data: batchesData, isError: batchesError } = useQuery({
         queryKey: ["batches"],
         queryFn: () => api.get("/batch").then(r => r.data.batches ?? []),
         refetchInterval: 10000,
+        retry: 1,
     });
 
     const allJobs: Job[] = jobsData ?? [];
@@ -422,6 +424,14 @@ function Results() {
                             <div className="flex items-center justify-center py-16">
                                 <Loader2 className="h-6 w-6 animate-spin" style={{ color: "#3b82f6" }} />
                             </div>
+                        ) : jobsError ? (
+                            <div className="flex flex-col items-center justify-center py-16 text-center">
+                                <AlertCircle className="h-12 w-12 mb-3 opacity-60" style={{ color: "#ef4444" }} />
+                                <p className="text-sm font-bold" style={{ color: "#ef4444" }}>Could not load results</p>
+                                <p className="text-xs mt-1 max-w-xs" style={{ color: "rgba(255,255,255,0.3)" }}>
+                                    The backend returned an error. Please redeploy the Railway service to apply the latest DB migration fix.
+                                </p>
+                            </div>
                         ) : singleJobs.length === 0 ? (
                             <div className="flex flex-col items-center justify-center py-16 text-center">
                                 <FileText className="h-12 w-12 mb-3 opacity-20" style={{ color: "#60a5fa" }} />
@@ -442,7 +452,13 @@ function Results() {
                         <p className="text-xs font-bold uppercase tracking-widest mb-4" style={{ color: "#22d3ee" }}>
                             ● BATCH EXTRACTION SESSIONS ({allBatches.length})
                         </p>
-                        {allBatches.length === 0 ? (
+                        {batchesError ? (
+                            <div className="flex flex-col items-center justify-center py-16 text-center">
+                                <AlertCircle className="h-12 w-12 mb-3 opacity-60" style={{ color: "#ef4444" }} />
+                                <p className="text-sm font-bold" style={{ color: "#ef4444" }}>Could not load batch results</p>
+                                <p className="text-xs mt-1" style={{ color: "rgba(255,255,255,0.3)" }}>Backend error — please redeploy Railway service.</p>
+                            </div>
+                        ) : allBatches.length === 0 ? (
                             <div className="flex flex-col items-center justify-center py-16 text-center">
                                 <Boxes className="h-12 w-12 mb-3 opacity-20" style={{ color: "#22d3ee" }} />
                                 <p className="text-sm font-bold" style={{ color: "rgba(255,255,255,0.3)" }}>No batch sessions yet</p>
