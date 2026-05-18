@@ -208,7 +208,7 @@ function FieldGrid({
                                 {isNull ? (
                                     <span style={{ color: "rgba(255,255,255,0.2)" }}>—</span>
                                 ) : isArray ? (
-                                    <NestedArray value={val as unknown[]} fieldName={fname} />
+                                    <NestedArray value={val as unknown[]} fieldName={fname} onFieldClick={onFieldClick} />
                                 ) : typeof val === "object" ? (
                                     <span className="font-mono text-xs" style={{ color: "rgba(255,255,255,0.7)" }}>{JSON.stringify(val)}</span>
                                 ) : (
@@ -234,7 +234,11 @@ function FieldGrid({
     );
 }
 
-function NestedArray({ value, fieldName }: { value: unknown[]; fieldName: string }) {
+function NestedArray({ value, fieldName, onFieldClick }: {
+    value: unknown[];
+    fieldName: string;
+    onFieldClick?: (fieldName: string, source: string, evidence: string, fieldValue?: string) => void;
+}) {
     const [expanded, setExpanded] = useState(false);
     const [activeTab, setActiveTab] = useState(0);
 
@@ -297,13 +301,23 @@ function NestedArray({ value, fieldName }: { value: unknown[]; fieldName: string
                         style={{ backgroundColor: "rgba(13,21,38,0.8)" }}>
                         {keys.map((key) => {
                             const v = records[activeTab]?.[key];
+                            const valStr = v != null ? String(v) : "";
+                            const isNull = v === null || v === undefined;
                             return (
-                                <div key={key}>
-                                    <p className="text-xs" style={{ color: "rgba(255,255,255,0.4)" }}>{key}</p>
+                                <div
+                                    key={key}
+                                    className={onFieldClick && !isNull ? "cursor-pointer rounded p-1 -m-1 transition-colors hover:bg-blue-500/10" : ""}
+                                    onClick={() => onFieldClick && !isNull && onFieldClick(key, "table", "", valStr)}
+                                    title={onFieldClick && !isNull ? `Click to highlight "${key}" in PDF` : undefined}
+                                >
+                                    <p className="text-xs flex items-center gap-1" style={{ color: "rgba(255,255,255,0.4)" }}>
+                                        {key}
+                                        {onFieldClick && !isNull && <ExternalLink className="h-2.5 w-2.5 opacity-40" style={{ color: "#60a5fa" }} />}
+                                    </p>
                                     <p className="text-xs font-medium" style={{ color: "rgba(255,255,255,0.85)" }}>
-                                        {v === null || v === undefined
+                                        {isNull
                                             ? <span style={{ color: "rgba(255,255,255,0.2)" }}>—</span>
-                                            : String(v)}
+                                            : valStr}
                                     </p>
                                 </div>
                             );

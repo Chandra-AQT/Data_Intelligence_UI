@@ -1110,7 +1110,7 @@ function Step5Results({ result, jobId, mode, schemaId, provider, singleDocId, on
     setActiveField(fieldName);
 
     if (!chunks.length) {
-      toast(`📍 Locating "${fieldName}" in document…`, { duration: 2000 });
+      setActiveField(fieldName);
       return;
     }
 
@@ -1131,14 +1131,20 @@ function Step5Results({ result, jobId, mode, schemaId, provider, singleDocId, on
     // Strategy 2: search using the passed field value directly (works for multi-record)
     if (!bestChunk && fieldValue && fieldValue.length > 2) {
       const valLower = fieldValue.toLowerCase().trim();
-      for (const chunk of chunks) {
+      // For table/diagram fields, prefer table chunks
+      const isTableField = fieldName.toLowerCase().includes("_table") || fieldName.toLowerCase().includes("_diagram") || src === "table";
+      const searchOrder = isTableField
+        ? [...chunks.filter(c => c.type === "table"), ...chunks.filter(c => c.type !== "table")]
+        : chunks;
+
+      for (const chunk of searchOrder) {
         const plain = chunk.markdown.replace(/<[^>]+>/g, "").replace(/&[^;]+;/g, " ").toLowerCase();
         if (plain.includes(valLower)) { bestChunk = chunk; break; }
       }
       // Partial match with first 20 chars
       if (!bestChunk && valLower.length > 5) {
         const partial = valLower.slice(0, 20);
-        for (const chunk of chunks) {
+        for (const chunk of searchOrder) {
           const plain = chunk.markdown.replace(/<[^>]+>/g, "").replace(/&[^;]+;/g, " ").toLowerCase();
           if (plain.includes(partial)) { bestChunk = chunk; break; }
         }
@@ -1179,7 +1185,6 @@ function Step5Results({ result, jobId, mode, schemaId, provider, singleDocId, on
           label: `Source of "${fieldName}"`,
           color: bestChunk.type === "table" ? "green" : "yellow",
         }]);
-        toast.success(`📍 Highlighted "${fieldName}" on page ${page}`, { duration: 2000 });
       } else {
         const chunksOnPage = chunks.filter(c => (chunkPageMap[c.id] ?? 1) === page);
         const posInPage = chunksOnPage.indexOf(bestChunk);
@@ -1192,10 +1197,7 @@ function Step5Results({ result, jobId, mode, schemaId, provider, singleDocId, on
           label: `Source of "${fieldName}" (estimated)`,
           color: bestChunk.type === "table" ? "green" : "yellow",
         }]);
-        toast(`📍 Navigated to page ${page} for "${fieldName}"`, { duration: 2000 });
       }
-    } else {
-      toast(`Could not locate "${fieldName}" in document`, { duration: 2000 });
     }
   }, [chunks, chunkPageMap, singleResult, records]);
 
