@@ -696,7 +696,7 @@ function Step3Engine({ provider, setProvider, multiRecord, setMultiRecord, visio
   retryThreshold: number; setRetryThreshold: (v: number) => void;
   onNext: () => void; onBack: () => void;
 }) {
-  const visionSupported = ["landingai", "openai", "chatgpt", "anthropic", "gemini"].includes(provider.provider);
+  const visionSupported = ["landingai", "openai", "chatgpt", "anthropic", "gemini", "groq", "grok"].includes(provider.provider);
 
   const Toggle = ({ val, set, label, desc, warn }: { val: boolean; set: (v: boolean) => void; label: string; desc: string; warn?: string }) => (
     <label className="flex items-start justify-between rounded-xl px-4 py-3 cursor-pointer transition-colors hover:bg-white/[0.02]" style={{ border: "1px solid rgba(255,255,255,0.06)" }}>
@@ -733,7 +733,7 @@ function Step3Engine({ provider, setProvider, multiRecord, setMultiRecord, visio
           <div className="flex items-center gap-3 rounded-xl px-4 py-3" style={{ border: "1px solid rgba(255,255,255,0.06)", opacity: 0.4 }}>
             <div className="flex-1">
               <p className="text-sm font-bold text-white">🤖 AI Parse</p>
-              <p className="text-xs mt-0.5" style={{ color: "rgba(255,255,255,0.35)" }}>Not available for {provider.provider} — use LandingAI, GPT-4o, Claude, or Gemini</p>
+              <p className="text-xs mt-0.5" style={{ color: "rgba(255,255,255,0.35)" }}>Not available for {provider.provider} — use LandingAI, GPT-4o, Claude, Gemini, or Groq</p>
             </div>
           </div>
         )}
