@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useCallback, useMemo } from "react";
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import toast from "react-hot-toast";
@@ -10,6 +10,7 @@ import { AppShell } from "@/components/aqt/app-shell";
 import { GradeBadge, StatusBadge } from "@/components/aqt/badges";
 import { ResultView } from "@/components/aqt/result-view";
 import { api, downloadBlob } from "@/lib/aqt";
+import { PdfViewerLazy as PdfViewer, type HighlightBox } from "@/components/aqt/pdf-viewer-lazy";
 
 export const Route = createFileRoute("/results")({ component: Results });
 
@@ -53,9 +54,8 @@ async function dlBatch(batchId: string, type: "excel" | "csv") {
     } catch { toast.error("Export failed"); }
 }
 
-// ── Result drawer shown below a clicked row ───────────────────────────────────
-function ResultDrawer({ jobId, onClose }: { jobId: string; onClose: () => void }) {
-    const navigate = useNavigate();
+// ── Full-screen split-pane result viewer ─────────────────────────────────────
+function ResultViewer({ jobId, onClose }: { jobId: string; onClose: () => void }) {
     const { data, isLoading, error } = useQuery({
         queryKey: ["job-detail", jobId],
         queryFn: () => api.get(`/jobs/${jobId}`).then(r => r.data),
@@ -75,126 +75,180 @@ function ResultDrawer({ jobId, onClose }: { jobId: string; onClose: () => void }
     const evidence: Record<string, string> = data?.evidence ?? {};
     const documentId: string | undefined = data?.document_id;
 
-    // Navigate to the document viewer, highlighting the source chunk/page
-    const handleFieldClick = (fieldName: string, source: string, evid: string) => {
-        if (!documentId) return;
-        // Navigate to /documents?view=<docId>&field=<fieldName>&source=<source>
-        navigate({
-            to: "/documents",
-            search: { view: documentId, field: fieldName, source, evidence: evid } as never,
-        });
-        toast.success(`Navigating to source of "${fieldName}" in document`, { icon: "📍" });
-    };
+    // Fetch parsed document for grounding boxes
+    const { data: parsedData } = useQuery({
+        queryKey: ["doc-parsed-results", documentId],
+        queryFn: () => api.get(`/documents/${documentId}/parsed`).then(r => r.data),
+        enabled: !!documentId,
+        staleTime: 300_000,
+    });
+    const { data: docsListData } = useQuery({
+        queryKey: ["documents"],
+        queryFn: () => api.get("/documents").then(r => r.data.documents ?? []),
+        staleTime: 60_000,
+    });
+
+    const chunks: Array<{ id: string; type: string; markdown: string; grounding?: { page: number; box?: { left: number; top: number; right: number; bottom: number } } }> =
+        (parsedData as { chunks?: typeof chunks })?.chunks ?? [];
+    const splits: Array<{ pages: number[]; chunks: string[] }> = (parsedData as { splits?: typeof splits })?.splits ?? [];
+    const pageCount: number = (parsedData as { metadata?: { page_count?: number } })?.metadata?.page_count ?? 1;
+
+    const chunkPageMap = useMemo(() => {
+        const map: Record<string, number> = {};
+        for (const c of chunks) { if (c.grounding?.page !== undefined) map[c.id] = c.grounding.page + 1; }
+        for (const s of splits) { const pg = (s.pages?.[0] ?? 0) + 1; for (const cid of s.chunks ?? []) { if (!map[cid]) map[cid] = pg; } }
+        const unique = new Set(Object.values(map));
+        if (unique.size === 1 && pageCount > 1 && chunks.length > 0) {
+            const cpp = Math.ceil(chunks.length / pageCount);
+            chunks.forEach((c, i) => { map[c.id] = Math.min(Math.floor(i / cpp) + 1, pageCount); });
+        }
+        return map;
+    }, [chunks, splits, pageCount]);
+
+    const BACKEND = (import.meta as { env?: { VITE_API_BASE?: string } }).env?.VITE_API_BASE?.replace(/\/api\/v1\/?$/, "") ?? "https://dataintelligence-production.up.railway.app";
+    const docFromList = (docsListData ?? []).find((d: { id: string }) => d.id === documentId);
+    const fileBasename = docFromList?.file_path ? (docFromList.file_path as string).replace(/\\/g, "/").split("/").pop() : null;
+    const fileUrl = fileBasename ? `${BACKEND}/uploads/${fileBasename}` : null;
+    const isPdf = fileUrl && /\.pdf$/i.test(fileUrl);
+
+    const [pdfPage, setPdfPage] = useState(1);
+    const [activeField, setActiveField] = useState<string | null>(null);
+    const [highlights, setHighlights] = useState<HighlightBox[]>([]);
+
+    const handleFieldClick = useCallback((fieldName: string, src: string, _evid: string, fieldValue?: string) => {
+        setActiveField(fieldName);
+        if (!chunks.length) return;
+        let best: typeof chunks[0] | null = null;
+        const isTableField = fieldName.toLowerCase().includes("_table") || fieldName.toLowerCase().includes("_diagram") || src === "table";
+        const ordered = isTableField ? [...chunks.filter(c => c.type === "table"), ...chunks.filter(c => c.type !== "table")] : chunks;
+        if (fieldValue && fieldValue.length > 2) {
+            const v = fieldValue.toLowerCase().trim();
+            for (const c of ordered) {
+                const plain = c.markdown.replace(/<[^>]+>/g, "").replace(/&[^;]+;/g, " ").toLowerCase();
+                if (plain.includes(v)) { best = c; break; }
+            }
+            if (!best && fieldValue.length > 5) {
+                const partial = fieldValue.slice(0, 20).toLowerCase();
+                for (const c of ordered) {
+                    const plain = c.markdown.replace(/<[^>]+>/g, "").replace(/&[^;]+;/g, " ").toLowerCase();
+                    if (plain.includes(partial)) { best = c; break; }
+                }
+            }
+        }
+        if (!best) best = ordered.find(c => c.grounding?.box) ?? ordered[0] ?? null;
+        if (best) {
+            const page = chunkPageMap[best.id] ?? 1;
+            setPdfPage(page);
+            if (best.grounding?.box) {
+                const b = best.grounding.box;
+                setHighlights([{ left: b.left, top: b.top, right: b.right, bottom: b.bottom, label: `Source of "${fieldName}"`, color: best.type === "table" ? "green" : "yellow" }]);
+            } else {
+                const onPage = chunks.filter(c => (chunkPageMap[c.id] ?? 1) === page);
+                const pos = onPage.indexOf(best);
+                const tot = Math.max(onPage.length, 1);
+                setHighlights([{ left: 0.02, top: Math.max(0, pos / tot - 0.02), right: 0.98, bottom: Math.min(1, (pos + 1) / tot + 0.02), label: `Source of "${fieldName}" (est)`, color: "yellow" }]);
+            }
+        }
+    }, [chunks, chunkPageMap]);
 
     return (
-        <div className="rounded-2xl mt-2 overflow-hidden"
-            style={{ backgroundColor: "#0a1020", border: "1px solid rgba(37,99,235,0.35)", boxShadow: "0 8px 32px rgba(0,0,0,0.5)" }}>
-            {/* Drawer header */}
-            <div className="flex items-center justify-between px-5 py-3"
-                style={{ backgroundColor: "rgba(37,99,235,0.08)", borderBottom: "1px solid rgba(37,99,235,0.2)" }}>
+        <div className="fixed inset-0 z-[70] flex flex-col" style={{ backgroundColor: "#060b18" }}>
+            {/* Header */}
+            <div className="flex items-center justify-between flex-wrap gap-3 px-5 py-3 shrink-0"
+                style={{ backgroundColor: "#060b14", borderBottom: "1px solid rgba(255,255,255,0.08)" }}>
                 <div className="flex items-center gap-3">
                     <div className="h-2 w-2 rounded-full animate-pulse" style={{ backgroundColor: "#3b82f6" }} />
                     <span className="text-sm font-black text-white">{data?.schema_name ?? "Extraction Result"}</span>
                     <span className="font-mono text-xs" style={{ color: "#60a5fa" }}>{jobId.slice(0, 14)}…</span>
-                    {data?.provider && (
-                        <span className="text-xs px-2 py-0.5 rounded-full font-bold"
-                            style={{ backgroundColor: "rgba(37,99,235,0.15)", color: "#60a5fa" }}>
-                            {String(data.provider)}
-                        </span>
-                    )}
+                    {data?.provider && <span className="text-xs px-2 py-0.5 rounded-full font-bold" style={{ backgroundColor: "rgba(37,99,235,0.15)", color: "#60a5fa" }}>{String(data.provider)}</span>}
                     {quality?.score !== undefined && <GradeBadge score={quality.score} />}
                 </div>
                 <div className="flex items-center gap-2">
-                    {/* View source document button */}
-                    {documentId && (
-                        <button
-                            onClick={() => navigate({ to: "/documents", search: { view: documentId } as never })}
-                            className="flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-bold transition-all hover:-translate-y-0.5"
-                            style={{ backgroundColor: "rgba(37,99,235,0.15)", border: "1px solid rgba(37,99,235,0.3)", color: "#60a5fa" }}>
-                            <MapPin className="h-3 w-3" />
-                            View Source Doc
-                        </button>
-                    )}
                     {data?.status === "completed" && (
                         <>
-                            <button onClick={() => dlJob(jobId, "excel")}
-                                className="flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-black text-white transition-all hover:-translate-y-0.5"
-                                style={{ background: "linear-gradient(135deg,#2563eb,#7c3aed)" }}>
-                                <Download className="h-3 w-3" />Excel
-                            </button>
-                            <button onClick={() => dlJob(jobId, "csv")}
-                                className="flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-bold transition-all"
-                                style={{ backgroundColor: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.1)", color: "rgba(255,255,255,0.6)" }}>
-                                CSV
-                            </button>
-                            <button onClick={() => dlJob(jobId, "json")}
-                                className="flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-bold transition-all"
-                                style={{ backgroundColor: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.1)", color: "rgba(255,255,255,0.6)" }}>
-                                JSON
-                            </button>
+                            <button onClick={() => dlJob(jobId, "excel")} className="flex items-center gap-1.5 rounded-xl px-4 py-1.5 text-xs font-black text-white" style={{ background: "linear-gradient(135deg,#2563eb,#7c3aed)" }}><Download className="h-3.5 w-3.5" />Excel</button>
+                            <button onClick={() => dlJob(jobId, "csv")} className="flex items-center gap-1.5 rounded-xl px-3 py-1.5 text-xs font-bold" style={{ backgroundColor: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.1)", color: "rgba(255,255,255,0.6)" }}>CSV</button>
+                            <button onClick={() => dlJob(jobId, "json")} className="flex items-center gap-1.5 rounded-xl px-3 py-1.5 text-xs font-bold" style={{ backgroundColor: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.1)", color: "rgba(255,255,255,0.6)" }}>JSON</button>
                         </>
                     )}
-                    <button onClick={onClose}
-                        className="flex h-7 w-7 items-center justify-center rounded-lg transition-colors hover:bg-white/10"
-                        style={{ color: "rgba(255,255,255,0.4)" }}>
-                        <X className="h-4 w-4" />
+                    <button onClick={onClose} className="flex items-center gap-2 rounded-xl px-4 py-2 text-sm font-bold hover:bg-white/10" style={{ backgroundColor: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.1)", color: "rgba(255,255,255,0.7)" }}>
+                        <X className="h-4 w-4" /> Close
                     </button>
                 </div>
             </div>
 
-            {/* Drawer body */}
-            <div className="p-5">
-                {isLoading && (
-                    <div className="flex items-center justify-center py-12">
-                        <Loader2 className="h-8 w-8 animate-spin" style={{ color: "#3b82f6" }} />
-                        <span className="ml-3 text-sm" style={{ color: "rgba(255,255,255,0.4)" }}>Loading result…</span>
+            {/* Loading / error states */}
+            {isLoading && (
+                <div className="flex-1 flex items-center justify-center">
+                    <Loader2 className="h-8 w-8 animate-spin" style={{ color: "#3b82f6" }} />
+                </div>
+            )}
+            {error && (
+                <div className="flex-1 flex flex-col items-center justify-center">
+                    <AlertCircle className="h-10 w-10 mb-3" style={{ color: "#ef4444" }} />
+                    <p className="text-sm font-bold" style={{ color: "#ef4444" }}>Failed to load result</p>
+                </div>
+            )}
+
+            {/* Split pane */}
+            {data && !isLoading && (
+                <div className="flex flex-1 overflow-hidden">
+                    {/* Left: PDF */}
+                    <div className="flex flex-col w-1/2 border-r overflow-hidden" style={{ borderColor: "rgba(255,255,255,0.08)" }}>
+                        {activeField && (
+                            <div className="flex items-center gap-2 px-4 py-1.5 shrink-0" style={{ backgroundColor: "rgba(37,99,235,0.12)", borderBottom: "1px solid rgba(37,99,235,0.25)" }}>
+                                <MapPin className="h-3 w-3" style={{ color: "#60a5fa" }} />
+                                <span className="text-xs font-bold" style={{ color: "#93c5fd" }}>Source of "{activeField}"
+                                    {highlights.length > 0 && <span className="ml-2 text-yellow-400">● highlighted</span>}
+                                </span>
+                                <button onClick={() => { setActiveField(null); setHighlights([]); }} className="ml-auto text-xs hover:text-white" style={{ color: "rgba(255,255,255,0.3)" }}>✕</button>
+                            </div>
+                        )}
+                        {isPdf && fileUrl ? (
+                            <PdfViewer fileUrl={fileUrl} pageNumber={pdfPage} totalPages={pageCount} onPageChange={setPdfPage} highlights={highlights} />
+                        ) : (
+                            <div className="flex-1 flex flex-col items-center justify-center gap-3" style={{ backgroundColor: "rgba(0,0,0,0.3)" }}>
+                                <Loader2 className="h-8 w-8 animate-spin" style={{ color: "#3b82f6" }} />
+                                <p className="text-sm" style={{ color: "rgba(255,255,255,0.4)" }}>Loading document…</p>
+                            </div>
+                        )}
                     </div>
-                )}
-                {error && (
-                    <div className="flex flex-col items-center justify-center py-12 text-center">
-                        <AlertCircle className="h-8 w-8 mb-2" style={{ color: "#ef4444" }} />
-                        <p className="text-sm font-bold" style={{ color: "#ef4444" }}>Failed to load result</p>
+
+                    {/* Right: Results */}
+                    <div className="flex flex-col w-1/2 overflow-hidden">
+                        <div className="flex items-center gap-2 px-4 py-2 shrink-0" style={{ backgroundColor: "rgba(37,99,235,0.06)", borderBottom: "1px solid rgba(37,99,235,0.15)" }}>
+                            <MapPin className="h-3 w-3 shrink-0" style={{ color: "#60a5fa" }} />
+                            <span className="text-xs" style={{ color: "rgba(255,255,255,0.4)" }}>Click any field value to highlight its source in the PDF</span>
+                        </div>
+                        <div className="flex-1 overflow-auto p-4">
+                            {data.status === "failed" ? (
+                                <div className="flex flex-col items-center justify-center py-16 text-center">
+                                    <AlertCircle className="h-10 w-10 mb-3" style={{ color: "#ef4444" }} />
+                                    <p className="text-sm font-bold" style={{ color: "#ef4444" }}>Extraction Failed</p>
+                                </div>
+                            ) : (
+                                <ResultView
+                                    result={singleResult} confidence={confidence} sources={sources} evidence={evidence}
+                                    documentId={documentId} records={records} schemaFields={schemaFields}
+                                    score={quality?.score ?? 0} failureLog={failureLog}
+                                    provider={String(data.provider ?? "")} schemaName={String(data.schema_name ?? "")} jobId={jobId}
+                                    coverage={quality?.breakdown?.coverage ? Math.round((quality.breakdown.coverage / 40) * 100) : undefined}
+                                    avgConfidence={quality?.breakdown?.avg_confidence ? Math.round((quality.breakdown.avg_confidence / 35) * 100) : undefined}
+                                    missingFields={quality?.missing_critical ?? []} suggestions={quality?.suggestions ?? []}
+                                    onFieldClick={handleFieldClick}
+                                />
+                            )}
+                        </div>
                     </div>
-                )}
-                {data && !isLoading && (
-                    data.status === "failed" ? (
-                        <div className="flex flex-col items-center justify-center py-12 text-center">
-                            <AlertCircle className="h-10 w-10 mb-3" style={{ color: "#ef4444" }} />
-                            <p className="text-sm font-bold" style={{ color: "#ef4444" }}>Extraction Failed</p>
-                            <p className="text-xs mt-1" style={{ color: "rgba(255,255,255,0.3)" }}>
-                                {String((data.result as { error?: string } | undefined)?.error ?? "No details available")}
-                            </p>
-                        </div>
-                    ) : data.status === "running" ? (
-                        <div className="flex flex-col items-center justify-center py-12 text-center">
-                            <Loader2 className="h-10 w-10 animate-spin mb-3" style={{ color: "#3b82f6" }} />
-                            <p className="text-sm font-bold text-white">Extraction in progress…</p>
-                        </div>
-                    ) : (
-                        <ResultView
-                            result={singleResult}
-                            confidence={confidence}
-                            sources={sources}
-                            evidence={evidence}
-                            documentId={documentId}
-                            records={records}
-                            schemaFields={schemaFields}
-                            score={quality?.score ?? 0}
-                            failureLog={failureLog}
-                            provider={String(data.provider ?? "")}
-                            schemaName={String(data.schema_name ?? "")}
-                            jobId={jobId}
-                            coverage={quality?.breakdown?.coverage ? Math.round((quality.breakdown.coverage / 40) * 100) : undefined}
-                            avgConfidence={quality?.breakdown?.avg_confidence ? Math.round((quality.breakdown.avg_confidence / 35) * 100) : undefined}
-                            missingFields={quality?.missing_critical ?? []}
-                            suggestions={quality?.suggestions ?? []}
-                            onFieldClick={handleFieldClick}
-                        />
-                    )
-                )}
-            </div>
+                </div>
+            )}
         </div>
     );
+}
+
+// ── Result drawer shown below a clicked row (kept for batch) ──────────────────
+function ResultDrawer({ jobId, onClose }: { jobId: string; onClose: () => void }) {
+    return <ResultViewer jobId={jobId} onClose={onClose} />;
 }
 
 // ── Single job row (clickable) ────────────────────────────────────────────────
