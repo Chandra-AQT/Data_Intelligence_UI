@@ -506,11 +506,8 @@ function Index() {
           </div>
 
           <h1 className="text-6xl font-black leading-[1.02] tracking-tight sm:text-7xl xl:text-8xl">
-            <span className="text-white">DocLens</span>
-            <br />
-            <span className="bg-gradient-to-r from-blue-400 via-cyan-400 to-violet-400 bg-clip-text text-transparent">
-              AI
-            </span>
+            <span className="text-white">DocLens </span>
+            <span className="bg-gradient-to-r from-blue-400 via-cyan-400 to-violet-400 bg-clip-text text-transparent">AI</span>
           </h1>
 
           <div className="mt-5 inline-flex items-center gap-2 rounded-xl border border-white/10 bg-white/5 px-5 py-2.5 backdrop-blur-sm">
